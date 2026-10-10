@@ -1,0 +1,36 @@
+# ==========================================
+# 1. СИСТЕМНЫЕ ФАЙЛЫ И СЕКРЕТЫ
+# ==========================================
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.local
+.env.*.local
+
+# ==========================================
+# 2. FRONTEND (React Native / Expo / Node.js)
+# ==========================================
+frontend/node_modules/
+frontend/.expo/
+frontend/.expo-shared/
+frontend/web-build/
+frontend/dist/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# ==========================================
+# 3. BACKEND (C# / .NET / ASP.NET Core)
+# ==========================================
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+*.user
+*.suo
+*.userosvmat
+*.db
+*.db-shm
+*.db-wal
+backend/**/appsettings.Development.json

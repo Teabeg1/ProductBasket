@@ -1,48 +1,73 @@
-export interface DevProfile {
+export interface DevUser {
   id: string;
   name: string;
   email: string;
-  role: 'Admin' | 'Member';
-  familyId: string;
-  familyName: string;
-  inviteCode: string;
+  familyId: string | null;
+  familyName: string | null;
+  avatarChar: string;
+  avatarBg: string;
+  avatarColor: string;
 }
 
-export const IS_DEV_MODE = true;
+export const IS_DEV_MODE = false;
 
-// Предустановленные мок-профили для быстрого локального тестирования
-export const DEV_PROFILES: Record<'admin1' | 'member2', DevProfile> = {
-  admin1: {
-    id: 'user-ivan-admin',
+export type DemoStage = 1 | 2;
+/**
+ * 1 = Этап 1 (APK v1): чистый запуск (пустая корзина, роли, мероприятия)
+ * 2 = Этап 2 (APK v2): богатый прототип (предзаполненные товары, роли, мероприятия)
+ */
+export const DEMO_STAGE: DemoStage = 2;
+
+// Пользователи для локального тестирования и сценария нескольких семей
+export const DEV_USERS: Record<'ivan' | 'elena' | 'denis' | 'artem' | 'danil', DevUser> = {
+  ivan: {
+    id: 'user-ivan',
     name: 'Иван',
     email: 'ivan@mail.ru',
-    role: 'Admin',
-    familyId: 'fam-67',
-    familyName: 'Семья 67',
-    inviteCode: 'FAM-8492',
+    familyId: null,
+    familyName: null,
+    avatarChar: 'И',
+    avatarBg: '#C8EF5A', // Лаймовый
+    avatarColor: '#1E1C1D',
   },
-  member2: {
-    id: 'user-elena-member',
-    name: 'Елена',
+  elena: {
+    id: 'user-elena',
+    name: 'Елена (Мама)',
     email: 'elena@mail.ru',
-    role: 'Member',
-    familyId: 'fam-67',
-    familyName: 'Семья 67',
-    inviteCode: 'FAM-8492',
+    familyId: null,
+    familyName: null,
+    avatarChar: 'Е',
+    avatarBg: '#DBEAFE', // Синий
+    avatarColor: '#2563EB',
+  },
+  denis: {
+    id: 'user-denis',
+    name: 'Денис (Папа)',
+    email: 'denis@mail.ru',
+    familyId: null,
+    familyName: null,
+    avatarChar: 'Д',
+    avatarBg: '#FEF3C7', // Янтарный
+    avatarColor: '#D97706',
+  },
+  artem: {
+    id: 'user-artem',
+    name: 'Артём (Сосед)',
+    email: 'artem@mail.ru',
+    familyId: null,
+    familyName: null,
+    avatarChar: 'А',
+    avatarBg: '#E0E7FF', // Индиго
+    avatarColor: '#4338CA',
+  },
+  danil: {
+    id: 'user-danil',
+    name: 'Данил (Сосед)',
+    email: 'danil@mail.ru',
+    familyId: null,
+    familyName: null,
+    avatarChar: 'Д',
+    avatarBg: '#FCE7F3', // Розовый
+    avatarColor: '#BE185D',
   },
 };
-
-// Список экранов для быстрого перехода в меню разработчика
-export const DEV_SCREENS = [
-  { id: 'Login', title: 'Frame 5: Вход в аккаунт' },
-  { id: 'Register', title: 'Frame 6: Регистрация' },
-  { id: 'ForgotPassword', title: 'Восстановление пароля' },
-  { id: 'Onboarding', title: 'Frame 7: Семейная группа' },
-  { id: 'Cart', title: 'Frame 1: Корзина (каталог)' },
-  { id: 'Roles', title: 'Frame 2: Моя семья (роли)' },
-  { id: 'Events', title: 'Frame 3: Мероприятия' },
-  { id: 'Settings', title: 'Frame 4: Настройки' },
-  { id: 'AdvancedSettings', title: 'Frame 8: Расширенные настройки' },
-  { id: 'ModalCreateEvent', title: 'Frame 9: Модалка создания события' },
-  { id: 'ModalAddFamily', title: 'Frame 10: Модалка добавления в семью' },
-] as const;

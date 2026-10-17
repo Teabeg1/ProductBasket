@@ -19,6 +19,9 @@ frontend/dist/
 frontend/npm-debug.log*
 frontend/yarn-debug.log*
 frontend/yarn-error.log*
+builds/
+*.apk
+frontend/android/
 
 # ==========================================
 # 3. BACKEND (C# / .NET / ASP.NET Core)

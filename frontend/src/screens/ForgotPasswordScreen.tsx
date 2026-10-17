@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,20 +10,36 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Mail, Lock, CheckCircle2 } from 'lucide-react-native';
+import { ArrowLeft, Mail, Lock, CheckCircle2, RotateCcw } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { AppInput } from '../components/AppInput';
 import { AppButton } from '../components/AppButton';
 import { Colors, Typography, Radii } from '../constants/theme';
+import { useApp } from '../context/AppContext';
 import type { AuthNavigationProp } from '../navigation/types';
 
 export const ForgotPasswordScreen: React.FC = () => {
   const navigation = useNavigation<AuthNavigationProp>();
+  const { colors } = useApp();
 
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sentSuccess, setSentSuccess] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const [countdown, setCountdown] = useState(60);
+  const [isResending, setIsResending] = useState(false);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval>;
+    if (sentSuccess && countdown > 0) {
+      timer = setInterval(() => {
+        setCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [sentSuccess, countdown]);
 
   const handleResetPassword = async () => {
     if (!email.trim()) {
@@ -42,6 +58,7 @@ export const ForgotPasswordScreen: React.FC = () => {
       // Имитация вызова API восстановления пароля
       await new Promise((resolve) => setTimeout(resolve, 800));
       setSentSuccess(true);
+      setCountdown(60);
     } catch (e: any) {
       Alert.alert('Ошибка', 'Не удалось отправить инструкцию. Попробуйте позже.');
     } finally {
@@ -49,8 +66,22 @@ export const ForgotPasswordScreen: React.FC = () => {
     }
   };
 
+  const handleResend = async () => {
+    if (countdown > 0 || isResending) return;
+    setIsResending(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      setCountdown(60);
+      Alert.alert('Успешно', 'Новая ссылка для сброса пароля отправлена на ваш email.');
+    } catch {
+      Alert.alert('Ошибка', 'Не удалось отправить письмо повторно.');
+    } finally {
+      setIsResending(false);
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -62,36 +93,61 @@ export const ForgotPasswordScreen: React.FC = () => {
         >
           {/* Верхняя навигация назад */}
           <TouchableOpacity
-            style={styles.backButton}
+            style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => navigation.goBack()}
             activeOpacity={0.7}
           >
-            <ArrowLeft size={22} color={Colors.textDark} strokeWidth={2.2} />
+            <ArrowLeft size={22} color={colors.textDark} strokeWidth={2.2} />
           </TouchableOpacity>
 
           {/* Иконка замка в бейдже */}
-          <View style={styles.logoBadge}>
-            <Lock size={26} color={Colors.primary} strokeWidth={2.3} />
+          <View style={[styles.logoBadge, { backgroundColor: colors.primaryLight }]}>
+            <Lock size={26} color={colors.primary} strokeWidth={2.3} />
           </View>
 
           {/* Заголовки */}
-          <Text style={styles.title}>Восстановление пароля</Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.title, { color: colors.textDark }]}>Восстановление пароля</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             Введите email, указанный при регистрации. Мы отправим ссылку и код для сброса пароля.
           </Text>
 
           {sentSuccess ? (
             /* Успешное состояние после отправки */
-            <View style={styles.successCard}>
-              <View style={styles.successIconWrapper}>
-                <CheckCircle2 size={32} color={Colors.success} strokeWidth={2.2} />
+            <View style={[styles.successCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.successIconWrapper, { backgroundColor: colors.successLight }]}>
+                <CheckCircle2 size={32} color={colors.success} strokeWidth={2.2} />
               </View>
-              <Text style={styles.successTitle}>Письмо отправлено!</Text>
-              <Text style={styles.successText}>
+              <Text style={[styles.successTitle, { color: colors.textDark }]}>Письмо отправлено!</Text>
+              <Text style={[styles.successText, { color: colors.textSecondary }]}>
                 Мы отправили ссылку для восстановления на адрес{'\n'}
-                <Text style={styles.successEmail}>{email || 'ivan@mail.ru'}</Text>.{'\n'}
+                <Text style={[styles.successEmail, { color: colors.textDark }]}>{email || 'ivan@mail.ru'}</Text>.{'\n'}
                 Проверьте папку «Входящие» и «Спам».
               </Text>
+
+              {/* Таймер повторной отправки (60 сек) */}
+              <View style={styles.resendContainer}>
+                {countdown > 0 ? (
+                  <View style={[styles.resendDisabledRow, { backgroundColor: colors.cardSecondary }]}>
+                    <RotateCcw size={14} color={colors.textSecondary} style={{ marginRight: 6 }} />
+                    <Text style={[styles.resendCountdownText, { color: colors.textSecondary }]}>
+                      Отправить повторно через {countdown} сек
+                    </Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.resendActiveBtn, { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}
+                    activeOpacity={0.7}
+                    onPress={handleResend}
+                    disabled={isResending}
+                  >
+                    <RotateCcw size={14} color={colors.primary} style={{ marginRight: 6 }} />
+                    <Text style={[styles.resendActiveText, { color: colors.primary }]}>
+                      {isResending ? 'Отправка...' : 'Отправить повторно'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
               <AppButton
                 title="Вернуться ко входу"
                 onPress={() => navigation.navigate('Login')}
@@ -126,9 +182,9 @@ export const ForgotPasswordScreen: React.FC = () => {
 
           {/* Нижняя ссылка возврата на вход */}
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Вспомнили пароль? </Text>
+            <Text style={[styles.footerText, { color: colors.textSecondary }]}>Вспомнили пароль? </Text>
             <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Login')}>
-              <Text style={styles.loginLink}>Войти</Text>
+              <Text style={[styles.loginLink, { color: colors.primary }]}>Войти</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -220,6 +276,35 @@ const styles = StyleSheet.create({
   successEmail: {
     fontWeight: '700',
     color: Colors.textDark,
+  },
+  resendContainer: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  resendDisabledRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  resendCountdownText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  resendActiveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  resendActiveText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   backToLoginBtn: {
     width: '100%',

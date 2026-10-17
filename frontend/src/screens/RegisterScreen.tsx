@@ -17,10 +17,12 @@ import { AppInput } from '../components/AppInput';
 import { AppButton } from '../components/AppButton';
 import { Colors, Typography, Radii } from '../constants/theme';
 import { AuthService } from '../services/api';
+import { useApp } from '../context/AppContext';
 import type { AuthNavigationProp } from '../navigation/types';
 
 export const RegisterScreen: React.FC = () => {
   const navigation = useNavigation<AuthNavigationProp>();
+  const { colors, registerUser } = useApp();
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -36,6 +38,28 @@ export const RegisterScreen: React.FC = () => {
     confirmPassword?: string;
     terms?: string;
   }>({});
+
+  const getPasswordStrength = (pass: string): {
+    score: number;
+    label: string;
+    color: string;
+  } => {
+    if (!pass) return { score: 0, label: '', color: colors.border };
+    const hasLetters = /[a-zA-Zа-яА-ЯёЁ]/.test(pass);
+    const hasDigits = /[0-9]/.test(pass);
+    const hasSpecial = /[^a-zA-Zа-яА-ЯёЁ0-9]/.test(pass);
+    const hasMixedCase = /[a-zа-яё]/.test(pass) && /[A-ZА-ЯЁ]/.test(pass);
+
+    if (pass.length < 6) {
+      return { score: 1, label: 'Слабый', color: '#EF4444' };
+    }
+    if (pass.length >= 8 && (hasSpecial || hasMixedCase) && hasDigits && hasLetters) {
+      return { score: 3, label: 'Надежный', color: '#10B981' };
+    }
+    return { score: 2, label: 'Нормальный', color: '#F59E0B' };
+  };
+
+  const passwordStrength = getPasswordStrength(password);
 
   const validate = () => {
     const newErrors: typeof errors = {};
@@ -76,10 +100,13 @@ export const RegisterScreen: React.FC = () => {
       try {
         await AuthService.register({ displayName, email, password });
       } catch (netErr) {
-        console.log('API офлайн, режим демо:', netErr);
-        await new Promise((resolve) => setTimeout(resolve, 700));
+        // Локальный режим при отсутствии бэкенда
+        await new Promise((resolve) => setTimeout(resolve, 400));
         await AuthService.saveToken('mock_jwt_token_' + Date.now());
       }
+
+      // Регистрируем пользователя в глобальном контексте приложения
+      registerUser(displayName, email);
 
       Alert.alert(
         'Аккаунт создан!',
@@ -88,7 +115,7 @@ export const RegisterScreen: React.FC = () => {
           {
             text: 'Продолжить',
             onPress: () => {
-              // Переход к онбордингу Frame 7
+              navigation.navigate('Onboarding');
             },
           },
         ]
@@ -101,7 +128,7 @@ export const RegisterScreen: React.FC = () => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -122,7 +149,7 @@ export const RegisterScreen: React.FC = () => {
 
           {/* Заголовки */}
           <Text style={styles.title}>Создать аккаунт</Text>
-          <Text style={styles.subtitle}>Быстрый старт для всей семьи</Text>
+          <Text style={styles.subtitle}>Быстрый старт для всей группы</Text>
 
           {/* Форма регистрации */}
           <View style={styles.form}>
@@ -164,6 +191,31 @@ export const RegisterScreen: React.FC = () => {
               leftIcon={<Lock size={18} color={Colors.textMuted} />}
               error={errors.password}
             />
+
+            {/* Индикатор сложности пароля: цветовая полоска (слабый / нормальный / надежный) */}
+            {password.length > 0 && (
+              <View style={styles.strengthContainer}>
+                <View style={styles.strengthBarsRow}>
+                  {[1, 2, 3].map((barIndex) => (
+                    <View
+                      key={barIndex}
+                      style={[
+                        styles.strengthBar,
+                        {
+                          backgroundColor:
+                            barIndex <= passwordStrength.score
+                              ? passwordStrength.color
+                              : colors.border,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Text style={[styles.strengthText, { color: passwordStrength.color }]}>
+                  {passwordStrength.label}
+                </Text>
+              </View>
+            )}
 
             <AppInput
               label="Повторите пароль"
@@ -218,9 +270,9 @@ export const RegisterScreen: React.FC = () => {
 
           {/* Нижняя ссылка возврата на вход */}
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Уже есть аккаунт? </Text>
+            <Text style={[styles.footerText, { color: colors.textSecondary }]}>Уже есть аккаунт? </Text>
             <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('Login')}>
-              <Text style={styles.loginLink}>Войти</Text>
+              <Text style={[styles.loginLink, { color: colors.primary }]}>Войти</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -252,22 +304,22 @@ export const RegisterScreen: React.FC = () => {
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
               <Text style={styles.legalHeading}>1. Назначение сервиса</Text>
               <Text style={styles.legalParagraph}>
-                «Совместная корзина продуктов» — мобильный сервис для семейного планирования покупок и распределения обязанностей по приобретению товаров.
+                «Совместная корзина продуктов» — мобильный сервис для совместного планирования покупок и распределения обязанностей по приобретению товаров.
               </Text>
 
-              <Text style={styles.legalHeading}>2. Семейная группа и роли</Text>
+              <Text style={styles.legalHeading}>2. Группа пользователей</Text>
               <Text style={styles.legalParagraph}>
-                Пользователи объединяются в семейные группы по коду приглашения. Создатель группы является Администратором и может приглашать или исключать участников.
+                Пользователи объединяются в группы по коду приглашения. Все участники группы равны и могут добавлять или исключать участников.
               </Text>
 
               <Text style={styles.legalHeading}>3. Синхронизация в реальном времени</Text>
               <Text style={styles.legalParagraph}>
-                При нажатии «Куплю я» товар мгновенно резервируется за вами и обновляется у всех членов семьи в режиме реального времени.
+                При нажатии «Куплю я» товар мгновенно резервируется за вами и обновляется у всех участников группы в режиме реального времени.
               </Text>
 
               <Text style={styles.legalHeading}>4. Персональные данные</Text>
               <Text style={styles.legalParagraph}>
-                Имя и контактные данные используются строго внутри вашей семейной группы для отображения ответственного за покупку и не передаются третьим лицам.
+                Имя и контактные данные используются строго внутри вашей группы для отображения ответственного за покупку и не передаются третьим лицам.
               </Text>
             </ScrollView>
 
@@ -322,6 +374,29 @@ const styles = StyleSheet.create({
   },
   form: {
     width: '100%',
+  },
+  strengthContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: -8,
+    marginBottom: 16,
+    paddingHorizontal: 2,
+  },
+  strengthBarsRow: {
+    flexDirection: 'row',
+    flex: 1,
+    marginRight: 12,
+    gap: 6,
+  },
+  strengthBar: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+  },
+  strengthText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   checkboxRow: {
     flexDirection: 'row',

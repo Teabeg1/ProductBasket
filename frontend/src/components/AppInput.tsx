@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { Colors, Radii } from '../constants/theme';
+import { useApp } from '../context/AppContext';
 
 interface AppInputProps {
   label: string;
@@ -36,26 +37,31 @@ export const AppInput: React.FC<AppInputProps> = ({
   autoCapitalize = 'none',
   style,
 }) => {
+  const { colors } = useApp();
   const [isFocused, setIsFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   return (
     <View style={[styles.container, style]}>
-      {label ? <Text style={styles.label}>{label}</Text> : null}
+      {label ? <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text> : null}
       <View
         style={[
           styles.inputWrapper,
-          isFocused && styles.inputWrapperFocused,
-          error ? styles.inputWrapperError : null,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
+          isFocused && { borderColor: colors.primary, backgroundColor: colors.card },
+          error ? { borderColor: colors.error } : null,
         ]}
       >
         {leftIcon && <View style={styles.leftIconContainer}>{leftIcon}</View>}
         <TextInput
-          style={styles.input}
+          style={[styles.input, { color: colors.textDark }]}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          placeholderTextColor={Colors.textSecondary}
+          placeholderTextColor={colors.textMuted}
           secureTextEntry={isPassword && !showPassword}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
@@ -69,14 +75,14 @@ export const AppInput: React.FC<AppInputProps> = ({
             style={styles.eyeButton}
           >
             {showPassword ? (
-              <EyeOff size={19} color={Colors.textMuted} />
+              <EyeOff size={19} color={colors.textMuted} />
             ) : (
-              <Eye size={19} color={Colors.textMuted} />
+              <Eye size={19} color={colors.textMuted} />
             )}
           </TouchableOpacity>
         )}
       </View>
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {error ? <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text> : null}
     </View>
   );
 };

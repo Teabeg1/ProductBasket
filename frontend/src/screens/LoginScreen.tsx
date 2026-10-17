@@ -14,12 +14,14 @@ import { ShoppingBag, Mail, Lock } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { AppInput } from '../components/AppInput';
 import { AppButton } from '../components/AppButton';
-import { Colors, Typography, Radii } from '../constants/theme';
+import { Colors, Typography } from '../constants/theme';
 import { AuthService } from '../services/api';
+import { useApp } from '../context/AppContext';
 import type { AuthNavigationProp } from '../navigation/types';
 
 export const LoginScreen: React.FC = () => {
   const navigation = useNavigation<AuthNavigationProp>();
+  const { setCurrentUserByEmail, colors } = useApp();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -53,20 +55,19 @@ export const LoginScreen: React.FC = () => {
       try {
         await AuthService.login({ email, password });
       } catch (netErr) {
-        // Бэкенд на стадии разработки, сохраняем тестовый токен
-        console.log('API офлайн, режим демо:', netErr);
-        await new Promise((resolve) => setTimeout(resolve, 600));
+        console.log('[Авторизация]: активен локальный режим (бэкенд офлайн)');
+        await new Promise((resolve) => setTimeout(resolve, 300));
         await AuthService.saveToken('mock_jwt_token_' + Date.now());
       }
 
-      Alert.alert('Успешный вход', `Добро пожаловать! Вы вошли как ${email}`, [
-        {
-          text: 'Продолжить',
-          onPress: () => {
-            // Переход к следующему экрану
-          },
-        },
-      ]);
+      // Устанавливаем пользователя по email и проверяем наличие семьи
+      const { hasFamily } = setCurrentUserByEmail(email);
+
+      if (hasFamily) {
+        navigation.navigate('Main');
+      } else {
+        navigation.navigate('Onboarding');
+      }
     } catch (e: any) {
       Alert.alert('Ошибка входа', e.message || 'Неверный логин или пароль');
     } finally {
@@ -75,7 +76,7 @@ export const LoginScreen: React.FC = () => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -87,14 +88,16 @@ export const LoginScreen: React.FC = () => {
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
-          {/* Верхний логотип в стиле Самокат */}
-          <View style={styles.logoBadge}>
-            <ShoppingBag size={28} color={Colors.primary} strokeWidth={2.3} />
+          {/* Верхний логотип */}
+          <View style={[styles.logoBadge, { backgroundColor: colors.primaryLight }]}>
+            <ShoppingBag size={28} color={colors.primary} strokeWidth={2.3} />
           </View>
 
           {/* Заголовки */}
-          <Text style={styles.title}>Вход в аккаунт</Text>
-          <Text style={styles.subtitle}>Синхронизируйте покупки с семьей</Text>
+          <Text style={[styles.title, { color: colors.textDark }]}>Вход в аккаунт</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            Синхронизируйте покупки с группой
+          </Text>
 
           {/* Форма ввода */}
           <View style={styles.form}>
@@ -106,10 +109,10 @@ export const LoginScreen: React.FC = () => {
                 if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
               }}
               placeholder="ivan@mail.ru"
-              leftIcon={<Mail size={18} color={Colors.textMuted} />}
+              leftIcon={<Mail size={18} color={colors.textMuted} />}
               keyboardType="email-address"
-              autoCapitalize="none"
               error={errors.email}
+              autoCapitalize="none"
             />
 
             <AppInput
@@ -120,21 +123,23 @@ export const LoginScreen: React.FC = () => {
                 if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
               }}
               placeholder="Введите пароль"
+              leftIcon={<Lock size={18} color={colors.textMuted} />}
               isPassword
-              leftIcon={<Lock size={18} color={Colors.textMuted} />}
               error={errors.password}
             />
 
-            {/* Ссылка "Забыли пароль?" */}
+            {/* Ссылка: Забыли пароль? */}
             <TouchableOpacity
+              style={styles.forgotPasswordWrapper}
               activeOpacity={0.7}
               onPress={() => navigation.navigate('ForgotPassword')}
-              style={styles.forgotPasswordWrapper}
             >
-              <Text style={styles.forgotPasswordText}>Забыли пароль?</Text>
+              <Text style={[styles.forgotPasswordText, { color: colors.blue }]}>
+                Забыли пароль?
+              </Text>
             </TouchableOpacity>
 
-            {/* Главная розовая кнопка "Войти" */}
+            {/* Кнопка Войти */}
             <AppButton
               title="Войти"
               onPress={handleLogin}
@@ -143,14 +148,18 @@ export const LoginScreen: React.FC = () => {
             />
           </View>
 
-          {/* Нижний блок перехода к регистрации */}
+          {/* Футер: Нет аккаунта? Зарегистрироваться */}
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Нет аккаунта? </Text>
+            <Text style={[styles.footerText, { color: colors.textSecondary }]}>
+              Нет аккаунта?{' '}
+            </Text>
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => navigation.navigate('Register')}
             >
-              <Text style={styles.registerLink}>Зарегистрироваться</Text>
+              <Text style={[styles.registerLink, { color: colors.primary }]}>
+                Зарегистрироваться
+              </Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -162,7 +171,6 @@ export const LoginScreen: React.FC = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
   container: {
     flex: 1,
@@ -177,7 +185,6 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 16,
-    backgroundColor: Colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
@@ -201,7 +208,6 @@ const styles = StyleSheet.create({
   forgotPasswordText: {
     fontSize: 13,
     fontWeight: '600',
-    color: Colors.blue,
   },
   loginButton: {
     marginTop: 4,
@@ -216,11 +222,9 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 14,
-    color: Colors.textSecondary,
   },
   registerLink: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.primary,
   },
 });

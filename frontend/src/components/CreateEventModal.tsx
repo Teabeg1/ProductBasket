@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   Modal,
   TouchableOpacity,
@@ -11,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { AppText as Text } from './AppText';
 import { X, Calendar as CalendarIcon, Users } from 'lucide-react-native';
 import { useApp } from '../context/AppContext';
 import { AppButton } from './AppButton';

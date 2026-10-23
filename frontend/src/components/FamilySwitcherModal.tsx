@@ -1,13 +1,13 @@
 import React from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   Modal,
   TouchableOpacity,
   TouchableWithoutFeedback,
   ScrollView,
 } from 'react-native';
+import { AppText as Text } from './AppText';
 import { X, Check, Plus, Key, Users } from 'lucide-react-native';
 import { useApp, type FamilyState } from '../context/AppContext';
 

@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   Modal,
   TouchableOpacity,
@@ -9,6 +8,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
+import { AppText as Text } from './AppText';
 import { X, Sparkles, Trash2, Plus, ShoppingBag } from 'lucide-react-native';
 import { useApp } from '../context/AppContext';
 

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   Modal,
   TouchableOpacity,
@@ -10,6 +9,7 @@ import {
   Share,
   Alert,
 } from 'react-native';
+import { AppText as Text } from './AppText';
 import { X, Users, Copy, Check, Share2, ShoppingBag } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useApp, type FamilyState } from '../context/AppContext';

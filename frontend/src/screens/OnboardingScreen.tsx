@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   TextInput,
@@ -12,6 +11,7 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
 } from 'react-native';
+import { AppText as Text } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Home, Key, LogOut, Clipboard as ClipboardIcon } from 'lucide-react-native';
 import * as ClipboardExpo from 'expo-clipboard';

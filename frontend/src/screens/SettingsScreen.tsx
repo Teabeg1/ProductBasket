@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -10,6 +9,7 @@ import {
   TouchableWithoutFeedback,
   TextInput,
 } from 'react-native';
+import { AppText as Text } from '../components/AppText';
 import {
   UserPlus,
   UserMinus,

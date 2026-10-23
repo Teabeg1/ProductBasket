@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   Image,
   TouchableOpacity,
   Alert,
 } from 'react-native';
+import { AppText as Text } from '../components/AppText';
 import {
   Check,
   ShoppingBag,

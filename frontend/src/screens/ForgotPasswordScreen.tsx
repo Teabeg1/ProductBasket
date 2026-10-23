@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   KeyboardAvoidingView,
@@ -9,6 +8,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
+import { AppText as Text } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Mail, Lock, CheckCircle2, RotateCcw } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';

@@ -256,13 +256,24 @@ const STAGE2_INITIAL_EVENTS: AppEvent[] = [
   },
 ];
 
+// Уровни масштабирования текста
+export type FontScaleLevel = 'small' | 'medium' | 'large';
+
+export const FONT_SCALE_MULTIPLIERS: Record<FontScaleLevel, number> = {
+  small: 1.0,     // Мелкий
+  medium: 1.12,   // Обычный (по умолчанию)
+  large: 1.25,    // Крупный
+};
+
 interface AppContextType {
-  // Theme & Language
+  // Theme & Typography & Language
   theme: AppTheme;
   colors: ReturnType<typeof getThemeColors>;
   toggleTheme: () => void;
+  fontScale: FontScaleLevel;
+  setFontScale: (scale: FontScaleLevel) => void;
+  fontScaleMultiplier: number;
   language: Language;
-  toggleLanguage: () => void;
   t: (key: keyof typeof TRANSLATIONS.ru, vars?: Record<string, string>) => string;
 
   // Active User & Auth
@@ -329,9 +340,11 @@ const generateRandomCode = (): string => {
 };
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Theme & Language
+  // Theme & Font Scale & Language
   const [theme, setTheme] = useState<AppTheme>('light');
-  const [language, setLanguage] = useState<Language>('ru');
+  const language: Language = 'ru';
+  const [fontScale, setFontScale] = useState<FontScaleLevel>('medium');
+  const fontScaleMultiplier = FONT_SCALE_MULTIPLIERS[fontScale];
 
   // Список всех известных семей (реестр)
   const [knownFamilies, setKnownFamilies] = useState<Record<string, FamilyState>>(() => {
@@ -393,12 +406,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
-  const toggleLanguage = () => {
-    setLanguage((prev) => (prev === 'ru' ? 'en' : 'ru'));
-  };
-
   const t = (key: keyof typeof TRANSLATIONS.ru, vars?: Record<string, string>): string => {
-    let str = TRANSLATIONS[language][key] || TRANSLATIONS.ru[key] || '';
+    let str = TRANSLATIONS.ru[key] || '';
     if (vars) {
       for (const [k, v] of Object.entries(vars)) {
         str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
@@ -1164,8 +1173,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         theme,
         colors,
         toggleTheme,
+        fontScale,
+        setFontScale,
+        fontScaleMultiplier,
         language,
-        toggleLanguage,
         t,
         currentUser,
         setCurrentUserByEmail,

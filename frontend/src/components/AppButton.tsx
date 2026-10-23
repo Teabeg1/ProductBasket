@@ -1,13 +1,13 @@
 import React from 'react';
 import {
   TouchableOpacity,
-  Text,
   StyleSheet,
   ActivityIndicator,
   ViewStyle,
   TextStyle,
   View,
 } from 'react-native';
+import { AppText as Text } from './AppText';
 import { Colors, Radii } from '../constants/theme';
 
 interface AppButtonProps {

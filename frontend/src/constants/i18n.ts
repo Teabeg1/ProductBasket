@@ -1,4 +1,4 @@
-export type Language = 'ru' | 'en';
+export type Language = 'ru';
 
 export const TRANSLATIONS = {
   ru: {
@@ -49,6 +49,8 @@ export const TRANSLATIONS = {
     appTheme: 'Тема приложения',
     themeLight: 'Светлая',
     themeDark: 'Тёмная',
+    textScaleTitle: 'Масштаб текста',
+    textScaleSubtitle: 'Размер шрифта интерфейса',
     leaveFamily: 'Выйти из группы',
     leaveFamilyConfirmText: 'Вы уверены, что хотите выйти из группы?',
     creator: 'Создатель',
@@ -60,9 +62,6 @@ export const TRANSLATIONS = {
     pushNotifications: 'Push-уведомления',
     notifyItemTaken: 'Оповещать о взятом товаре',
     notifySound: 'Звук при обновлении',
-    languageHeader: 'ЯЗЫК ИНТЕРФЕЙСА',
-    languageLabel: 'Язык',
-    languageCurrent: 'Русский (Россия)',
     securityHeader: 'АККАУНТ И БЕЗОПАСНОСТЬ',
     changePassword: 'Сменить пароль',
     deleteAccount: 'Удалить аккаунт навсегда',
@@ -99,104 +98,5 @@ export const TRANSLATIONS = {
     copiedBtn: 'Скопировано!',
     inviteCodeHint: 'Для входа достаточно ввести этот код',
     shareCodeBtn: 'Поделиться кодом',
-  },
-  en: {
-    // Tabs
-    tabCart: 'Cart',
-    tabRoles: 'Roles',
-    tabEvents: 'Events',
-    tabSettings: 'Settings',
-
-    // Cart Screen
-    cartTitle: 'Shopping Cart',
-    itemsCountSuffix: 'pcs',
-    addToCart: 'Add to Cart',
-
-    // Roles Screen
-    rolesTitle: 'My Group',
-    membersInCart: 'members in basket',
-    allChosen: 'All chosen',
-    itemsToBuy: 'Items to Buy',
-    cartEmptyTitle: 'Your cart is empty',
-    cartEmptySubtitle: 'Add items from the "Cart" tab to assign shopping tasks.',
-    goToCatalog: 'Open Catalog',
-    buyMyself: 'I will buy',
-    willBuy: 'Buys',
-    rolesHintTitle: '💡 Tip',
-    rolesHintText: 'Tap an item to change assignee or take responsibility for buying it.',
-
-    // Events Screen
-    eventsTitle: 'Events',
-    createEventBtn: 'Create Event',
-    eventsEmptyTitle: 'No events yet',
-    eventsEmptySubtitle: 'Create a shared event (e.g., Party or Picnic) and start a group basket.',
-    createCartBtn: 'Create Cart',
-    openCartBtn: 'Open Cart',
-    cartCreatedStatus: 'Cart Created',
-    deleteEventConfirmTitle: 'Delete Event',
-    deleteEventConfirmText: 'Are you sure you want to delete this event?',
-    cancel: 'Cancel',
-    delete: 'Delete',
-
-    // Settings Screen
-    settingsTitle: 'Settings',
-    familyGroupTitle: 'Group Management',
-    addFamilyMember: 'Add to Group',
-    removeFamilyMember: 'Remove from Group',
-    appSettingsTitle: 'App Settings',
-    advancedSettings: 'Advanced Settings',
-    appTheme: 'App Theme',
-    themeLight: 'Light',
-    themeDark: 'Dark',
-    leaveFamily: 'Leave Group',
-    leaveFamilyConfirmText: 'Are you sure you want to leave the group?',
-    creator: 'Creator',
-    member: 'Member',
-
-    // Advanced Settings Screen
-    advSettingsTitle: 'Advanced Settings',
-    notificationsHeader: 'NOTIFICATIONS',
-    pushNotifications: 'Push Notifications',
-    notifyItemTaken: 'Notify on Item Picked',
-    notifySound: 'Update Sound',
-    languageHeader: 'INTERFACE LANGUAGE',
-    languageLabel: 'Language',
-    languageCurrent: 'English (US)',
-    securityHeader: 'ACCOUNT & SECURITY',
-    changePassword: 'Change Password',
-    deleteAccount: 'Delete Account Permanently',
-
-    // Onboarding Screen
-    onboardingTitle: 'Group',
-    onboardingSubtitle: 'Choose how to collaborate',
-    createFamilyCardTitle: 'Create New Group',
-    createFamilyCardSubtitle: 'Create a group and invite members with code',
-    familyNamePlaceholder: 'e.g. Room 304',
-    createFamilySubmitBtn: 'Create Group',
-    orByInvite: 'OR VIA INVITATION',
-    joinFamilyCardTitle: 'Join with Group Code',
-    joinFamilyCardSubtitle: 'Enter 6-character code from a group member',
-    joinFamilySubmitBtn: 'Join Shopping Basket',
-    joinSuccessTitle: 'Welcome!',
-    joinSuccessText: 'You successfully joined the group',
-    invalidCodeTitle: 'Invalid Code',
-    invalidCodeText: 'Group with this code was not found.',
-
-    // Modal Create Event
-    modalCreateEventTitle: 'New Event',
-    eventNameLabel: 'Event Name',
-    eventNamePlaceholder: 'e.g. Picnic or Party',
-    eventDateLabel: 'Event Date',
-    eventIconLabel: 'Event Icon',
-    createEventSubmitBtn: 'Create Event',
-
-    // Modal Add Family
-    modalAddFamilyTitle: 'Add to Group',
-    modalAddFamilySubtitle: 'Invite members to "{familyName}" with invite code',
-    inviteCodeHeader: 'GROUP INVITATION CODE',
-    copyCodeBtn: 'Copy',
-    copiedBtn: 'Copied!',
-    inviteCodeHint: 'Just enter this code to join',
-    shareCodeBtn: 'Share Code',
   },
 };

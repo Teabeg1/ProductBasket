@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   Image,
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
+import { AppText as Text } from '../components/AppText';
 import {
   Plus,
   Minus,

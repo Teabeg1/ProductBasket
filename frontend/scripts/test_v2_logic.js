@@ -457,7 +457,51 @@ console.log('\n[Test 8] Header Titles Formatting & Russian Terminology...');
 
   console.log('✓ PASS: Cart and Roles header titles formatted correctly, terminology updated.');
 }
+// =========================================================================
+// TEST 9: Russian-Only Mode & Typography Scaling (Lecturer Requirements)
+// =========================================================================
+console.log('\n[Test 9] Russian-Only Mode & Typography Scaling System...');
+{
+  const fs = require('fs');
+  const path = require('path');
+
+  // 9.1 i18n is strictly Russian, no English dictionary
+  const i18nContent = fs.readFileSync(path.join(__dirname, '../src/constants/i18n.ts'), 'utf8');
+  assert(i18nContent.includes("export type Language = 'ru';"), 'Language type must only be ru');
+  assert(!i18nContent.includes('en: {'), 'English dictionary must be completely removed');
+  assert(i18nContent.includes("textScaleTitle: 'Масштаб текста'"), 'Must have textScaleTitle key');
+
+  // 9.2 AppContext text scale state & multipliers
+  const appContextContent = fs.readFileSync(path.join(__dirname, '../src/context/AppContext.tsx'), 'utf8');
+  assert(!appContextContent.includes('toggleLanguage:'), 'AppContext must NOT expose toggleLanguage');
+  assert(appContextContent.includes('fontScale: FontScaleLevel;'), 'AppContext must export fontScale');
+  assert(appContextContent.includes('fontScaleMultiplier: number;'), 'AppContext must export fontScaleMultiplier');
+  assert(appContextContent.includes("useState<FontScaleLevel>('medium')"), 'Default font scale must be medium (larger)');
+  assert(appContextContent.includes('small: 1.0'), 'Multiplier for small must be 1.0 (original)');
+  assert(appContextContent.includes('medium: 1.12'), 'Multiplier for medium must be 1.12 (+12%)');
+  assert(appContextContent.includes('large: 1.25'), 'Multiplier for large must be 1.25 (+25%)');
+
+  // 9.3 AppText component exists and scales fontSize
+  const appTextContent = fs.readFileSync(path.join(__dirname, '../src/components/AppText.tsx'), 'utf8');
+  assert(appTextContent.includes('fontScaleMultiplier'), 'AppText must utilize fontScaleMultiplier');
+
+  // 9.4 Scale is completely in AdvancedSettingsScreen, removed from SettingsScreen
+  const settingsContent = fs.readFileSync(path.join(__dirname, '../src/screens/SettingsScreen.tsx'), 'utf8');
+  assert(!settingsContent.includes('<TextScaleSlider />'), 'SettingsScreen must NOT include TextScaleSlider');
+
+  const advSettingsContent = fs.readFileSync(path.join(__dirname, '../src/screens/AdvancedSettingsScreen.tsx'), 'utf8');
+  assert(advSettingsContent.includes('<TextScaleSlider />'), 'AdvancedSettingsScreen must include TextScaleSlider');
+
+  // 9.5 TextScaleSlider contains exactly 3 options: Мелкий, Обычный, Крупный
+  const sliderContent = fs.readFileSync(path.join(__dirname, '../src/components/TextScaleSlider.tsx'), 'utf8');
+  assert(sliderContent.includes("label: 'Мелкий'"), 'Must include Мелкий option');
+  assert(sliderContent.includes("label: 'Обычный'"), 'Must include Обычный option');
+  assert(sliderContent.includes("label: 'Крупный'"), 'Must include Крупный option');
+  assert(!sliderContent.includes('Живой образец'), 'Must NOT have preview sample');
+
+  console.log('✓ PASS: Strict Russian-only mode verified and font scaling multiplier defaults are active.');
+}
 
 console.log('\n=======================================================');
-console.log('   ALL 8 COMPREHENSIVE TESTS SUCCESSFULLY PASSED!');
+console.log('   ALL 9 COMPREHENSIVE TESTS SUCCESSFULLY PASSED!');
 console.log('=======================================================\n');

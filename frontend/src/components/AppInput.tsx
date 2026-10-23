@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   TextInput,
   StyleSheet,
   TouchableOpacity,
   KeyboardTypeOptions,
   ViewStyle,
 } from 'react-native';
+import { AppText as Text } from './AppText';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { Colors, Radii } from '../constants/theme';
 import { useApp } from '../context/AppContext';

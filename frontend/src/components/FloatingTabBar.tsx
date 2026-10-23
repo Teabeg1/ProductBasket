@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { AppText as Text } from './AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ShoppingBag, Users, Calendar, SlidersHorizontal } from 'lucide-react-native';
 import { useApp } from '../context/AppContext';

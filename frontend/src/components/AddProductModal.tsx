@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   Modal,
   TouchableOpacity,
@@ -12,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { AppText as Text } from './AppText';
 import { X, PackagePlus, ShoppingBag } from 'lucide-react-native';
 import { useApp } from '../context/AppContext';
 import { AppButton } from './AppButton';

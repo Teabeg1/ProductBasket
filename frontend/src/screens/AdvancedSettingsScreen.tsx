@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   Switch,
   Alert,
 } from 'react-native';
+import { AppText as Text } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
@@ -20,11 +20,12 @@ import {
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useApp } from '../context/AppContext';
+import { TextScaleSlider } from '../components/TextScaleSlider';
 import type { AuthNavigationProp } from '../navigation/types';
 
 export const AdvancedSettingsScreen: React.FC = () => {
   const navigation = useNavigation<AuthNavigationProp>();
-  const { colors, language, toggleLanguage, t } = useApp();
+  const { colors, t } = useApp();
 
   const [pushEnabled, setPushEnabled] = useState(true);
   const [takeProductNotify, setTakeProductNotify] = useState(true);
@@ -133,33 +134,12 @@ export const AdvancedSettingsScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Секция 2: Язык интерфейса */}
+        {/* Секция 2: Масштаб */}
         <View style={styles.section}>
           <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>
-            {t('languageHeader')}
+            МАСШТАБ
           </Text>
-          <View
-            style={[
-              styles.card,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <TouchableOpacity
-              style={styles.actionRow}
-              activeOpacity={0.7}
-              onPress={toggleLanguage}
-            >
-              <View>
-                <Text style={[styles.rowTitle, { color: colors.textDark }]}>
-                  {t('languageLabel')}
-                </Text>
-                <Text style={[styles.rowSubtitle, { color: colors.blue }]}>
-                  {language === 'ru' ? 'Русский (Россия)' : 'English (US)'}
-                </Text>
-              </View>
-              <ChevronRight size={16} color={colors.textMuted} />
-            </TouchableOpacity>
-          </View>
+          <TextScaleSlider />
         </View>
 
         {/* Секция 3: Аккаунт и безопасность */}

@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
 // Базовый URL бэкенда на ASP.NET Core
-export const API_BASE_URL = 'http://localhost:5000/api';
+export const API_BASE_URL = 'https://product-basket-api.onrender.com/api';
 const TOKEN_KEY = 'user_jwt_token';
 
 export interface UserDto {

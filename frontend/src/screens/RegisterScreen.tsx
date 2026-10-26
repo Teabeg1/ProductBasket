@@ -97,31 +97,38 @@ export const RegisterScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      try {
-        await AuthService.register({ displayName, email, password });
-      } catch (netErr) {
-        // Локальный режим при отсутствии бэкенда
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        await AuthService.saveToken('mock_jwt_token_' + Date.now());
-      }
+      await AuthService.register({ displayName, email, password });
 
       // Регистрируем пользователя в глобальном контексте приложения
       registerUser(displayName, email);
 
-      Alert.alert(
-        'Аккаунт создан!',
-        `Поздравляем, ${displayName}! Теперь создайте семейную группу или присоединитесь по коду.`,
-        [
-          {
-            text: 'Продолжить',
-            onPress: () => {
-              navigation.navigate('Onboarding');
+      const successTitle = 'Аккаунт создан!';
+      const successMessage = `Поздравляем, ${displayName}! Теперь создайте семейную группу или присоединитесь по коду.`;
+
+      if (Platform.OS === 'web') {
+        window.alert(`${successTitle}\n\n${successMessage}`);
+        navigation.navigate('Onboarding');
+      } else {
+        Alert.alert(
+          successTitle,
+          successMessage,
+          [
+            {
+              text: 'Продолжить',
+              onPress: () => {
+                navigation.navigate('Onboarding');
+              },
             },
-          },
-        ]
-      );
+          ]
+        );
+      }
     } catch (e: any) {
-      Alert.alert('Ошибка регистрации', e.message || 'Не удалось зарегистрироваться');
+      const errorMsg = e.message || 'Не удалось зарегистрироваться';
+      if (Platform.OS === 'web') {
+        window.alert(`Ошибка регистрации: ${errorMsg}`);
+      } else {
+        Alert.alert('Ошибка регистрации', errorMsg);
+      }
     } finally {
       setLoading(false);
     }

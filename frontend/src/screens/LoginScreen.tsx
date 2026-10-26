@@ -52,13 +52,7 @@ export const LoginScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      try {
-        await AuthService.login({ email, password });
-      } catch (netErr) {
-        console.log('[Авторизация]: активен локальный режим (бэкенд офлайн)');
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        await AuthService.saveToken('mock_jwt_token_' + Date.now());
-      }
+      await AuthService.login({ email, password });
 
       // Устанавливаем пользователя по email и проверяем наличие семьи
       const { hasFamily } = setCurrentUserByEmail(email);
@@ -69,7 +63,12 @@ export const LoginScreen: React.FC = () => {
         navigation.navigate('Onboarding');
       }
     } catch (e: any) {
-      Alert.alert('Ошибка входа', e.message || 'Неверный логин или пароль');
+      const errorMsg = e.message || 'Неверный логин или пароль';
+      if (Platform.OS === 'web') {
+        window.alert(`Ошибка входа: ${errorMsg}`);
+      } else {
+        Alert.alert('Ошибка входа', errorMsg);
+      }
     } finally {
       setLoading(false);
     }

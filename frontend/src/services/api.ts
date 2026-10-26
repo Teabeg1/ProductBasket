@@ -1,8 +1,11 @@
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
 // Базовый URL бэкенда на ASP.NET Core
 export const API_BASE_URL = 'https://product-basket-api.onrender.com/api';
 const TOKEN_KEY = 'user_jwt_token';
+
+let memoryToken: string | null = null;
 
 export interface UserDto {
   id: string;
@@ -27,27 +30,79 @@ export interface RegisterRequest {
   password: string;
 }
 
+async function extractErrorMessage(res: Response, defaultMessage: string): Promise<string> {
+  try {
+    const errorData = await res.json();
+    if (errorData?.message) {
+      return errorData.message;
+    }
+    if (errorData?.errors) {
+      const firstKey = Object.keys(errorData.errors)[0];
+      const firstVal = errorData.errors[firstKey];
+      return Array.isArray(firstVal) ? firstVal[0] : String(firstVal);
+    }
+    if (errorData?.title) {
+      return errorData.title;
+    }
+  } catch {}
+  return defaultMessage;
+}
+
 export const AuthService = {
-  // Сохранение токена в безопасное хранилище устройства
+  // Сохранение токена в безопасное хранилище устройства или localStorage браузера
   async saveToken(token: string): Promise<void> {
+    memoryToken = token;
+    if (Platform.OS === 'web') {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem(TOKEN_KEY, token);
+        }
+      } catch (e) {
+        console.warn('localStorage not available', e);
+      }
+      return;
+    }
+
     try {
       await SecureStore.setItemAsync(TOKEN_KEY, token);
     } catch (e) {
-      console.warn('SecureStore not available, falling back to memory/local', e);
+      console.warn('SecureStore not available, falling back to memory', e);
     }
   },
 
   // Получение токена для заголовков Authorization: Bearer <token>
   async getToken(): Promise<string | null> {
+    if (Platform.OS === 'web') {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          return window.localStorage.getItem(TOKEN_KEY) || memoryToken;
+        }
+      } catch {
+        return memoryToken;
+      }
+      return memoryToken;
+    }
+
     try {
-      return await SecureStore.getItemAsync(TOKEN_KEY);
+      const token = await SecureStore.getItemAsync(TOKEN_KEY);
+      return token || memoryToken;
     } catch (e) {
-      return null;
+      return memoryToken;
     }
   },
 
   // Удаление токена при выходе из аккаунта
   async removeToken(): Promise<void> {
+    memoryToken = null;
+    if (Platform.OS === 'web') {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.removeItem(TOKEN_KEY);
+        }
+      } catch {}
+      return;
+    }
+
     try {
       await SecureStore.deleteItemAsync(TOKEN_KEY);
     } catch (e) {
@@ -64,8 +119,8 @@ export const AuthService = {
     });
 
     if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.message || `Ошибка авторизации: ${res.status}`);
+      const errorMsg = await extractErrorMessage(res, `Ошибка авторизации: ${res.status}`);
+      throw new Error(errorMsg);
     }
 
     const data: AuthResponse = await res.json();
@@ -82,8 +137,8 @@ export const AuthService = {
     });
 
     if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.message || `Ошибка регистрации: ${res.status}`);
+      const errorMsg = await extractErrorMessage(res, `Ошибка регистрации: ${res.status}`);
+      throw new Error(errorMsg);
     }
 
     const data: AuthResponse = await res.json();

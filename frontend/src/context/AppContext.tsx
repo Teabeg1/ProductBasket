@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { DEV_USERS, DEMO_STAGE, type DevUser } from '../config/devConfig';
 import { getThemeColors, type AppTheme } from '../constants/theme';
 import { TRANSLATIONS, type Language } from '../constants/i18n';
-import { FamilyService } from '../services/api';
+import { FamilyService, type AuthResponse } from '../services/api';
 
 export interface CatalogProduct {
   id: string;
@@ -280,6 +280,7 @@ interface AppContextType {
   // Active User & Auth
   currentUser: DevUser;
   setCurrentUserByEmail: (email: string) => { user: DevUser; hasFamily: boolean };
+  setCurrentUserFromAuth: (authData: AuthResponse) => Promise<{ user: DevUser; hasFamily: boolean }>;
   registerUser: (displayName: string, email: string) => void;
   updateUserName: (name: string) => void;
   logout: () => void;
@@ -481,6 +482,93 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setCurrentUser(updatedUser);
     return { user: updatedUser, hasFamily };
+  };
+
+  const setCurrentUserFromAuth = async (authData: AuthResponse): Promise<{ user: DevUser; hasFamily: boolean }> => {
+    const cleanEmail = authData.user.email.trim().toLowerCase();
+    const cleanName = authData.user.displayName || (authData.user as any).name || 'Пользователь';
+
+    let userFamilies: FamilyState[] = [];
+
+    try {
+      const myFamilies = await FamilyService.getMyFamilies();
+      if (Array.isArray(myFamilies) && myFamilies.length > 0) {
+        userFamilies = myFamilies.map((f: any) => ({
+          id: String(f.id),
+          name: f.name,
+          code: f.code,
+          members: (f.members || []).map((m: any) => ({
+            id: String(m.id),
+            name: m.displayName || m.name || 'Участник',
+            email: m.email,
+            avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
+            avatarBg: m.avatarBg || '#E0E7FF',
+            avatarColor: m.avatarColor || '#3730A3',
+            familyId: String(f.id),
+            familyName: f.name,
+          })),
+          customProducts: [],
+        }));
+      }
+    } catch (e) {
+      console.warn('Failed to load families from cloud:', e);
+    }
+
+    // Если в ответе логина был familyId, но getMyFamilies не вернул (например сбой сети)
+    if (userFamilies.length === 0 && authData.user.familyId) {
+      const fallbackFam: FamilyState = {
+        id: String(authData.user.familyId),
+        name: authData.user.familyName || 'Моя семья',
+        code: '------',
+        members: [],
+        customProducts: [],
+      };
+      userFamilies = [fallbackFam];
+    }
+
+    // Если в облаке ничего нет, проверяем локальный реестр
+    if (userFamilies.length === 0) {
+      userFamilies = Object.values(knownFamilies).filter((f) =>
+        f.members.some((m) => m.email?.toLowerCase() === cleanEmail)
+      );
+    }
+
+    const hasFamily = userFamilies.length > 0;
+    const activeFam = hasFamily ? userFamilies[0] : null;
+
+    const loggedUser: DevUser = {
+      id: String(authData.user.id),
+      name: cleanName,
+      email: cleanEmail,
+      avatarChar: cleanName.charAt(0).toUpperCase() || 'U',
+      avatarBg: (authData.user as any).avatarBg || '#E0E7FF',
+      avatarColor: (authData.user as any).avatarColor || '#3730A3',
+      familyId: activeFam ? activeFam.id : null,
+      familyName: activeFam ? activeFam.name : null,
+    };
+
+    setFamilies(userFamilies);
+    setKnownFamilies((prev) => {
+      const updated = { ...prev };
+      userFamilies.forEach((f) => {
+        updated[f.id] = f;
+      });
+      return updated;
+    });
+
+    setActiveFamilyId(activeFam ? activeFam.id : null);
+    if (activeFam) {
+      setActiveCartId(activeFam.id);
+      setCarts((prev) => ({
+        ...prev,
+        [activeFam.id]: prev[activeFam.id] || {},
+      }));
+    } else {
+      setActiveCartId('main');
+    }
+
+    setCurrentUser(loggedUser);
+    return { user: loggedUser, hasFamily };
   };
 
   const registerUser = (displayName: string, email: string) => {
@@ -1223,6 +1311,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         t,
         currentUser,
         setCurrentUserByEmail,
+        setCurrentUserFromAuth,
         registerUser,
         updateUserName,
         logout,

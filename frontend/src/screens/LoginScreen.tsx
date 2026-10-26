@@ -21,7 +21,7 @@ import type { AuthNavigationProp } from '../navigation/types';
 
 export const LoginScreen: React.FC = () => {
   const navigation = useNavigation<AuthNavigationProp>();
-  const { setCurrentUserByEmail, colors } = useApp();
+  const { setCurrentUserFromAuth, setCurrentUserByEmail, colors } = useApp();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -52,10 +52,10 @@ export const LoginScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      await AuthService.login({ email, password });
+      const authData = await AuthService.login({ email, password });
 
-      // Устанавливаем пользователя по email и проверяем наличие семьи
-      const { hasFamily } = setCurrentUserByEmail(email);
+      // Устанавливаем пользователя и синхронизируем семьи из базы данных в облаке
+      const { hasFamily } = await setCurrentUserFromAuth(authData);
 
       if (hasFamily) {
         navigation.navigate('Main');

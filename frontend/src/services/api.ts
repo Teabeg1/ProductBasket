@@ -12,6 +12,11 @@ export interface UserDto {
   displayName: string;
   email: string;
   familyId?: string;
+  familyName?: string;
+  avatarUrl?: string;
+  avatarChar?: string;
+  avatarBg?: string;
+  avatarColor?: string;
 }
 
 export interface AuthResponse {
@@ -151,6 +156,20 @@ export const AuthService = {
     const data: AuthResponse = await res.json();
     await this.saveToken(data.token);
     return data;
+  },
+
+  // Получение профиля текущего пользователя (GET /api/auth/me)
+  async getProfile(): Promise<UserDto | null> {
+    const token = await this.getToken();
+    if (!token) return null;
+    const res = await fetch(`${API_BASE_URL}/auth/me`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) return null;
+    return await res.json();
   },
 };
 

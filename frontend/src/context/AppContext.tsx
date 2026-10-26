@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { DEV_USERS, DEMO_STAGE, type DevUser } from '../config/devConfig';
 import { getThemeColors, type AppTheme } from '../constants/theme';
 import { TRANSLATIONS, type Language } from '../constants/i18n';
+import { FamilyService } from '../services/api';
 
 export interface CatalogProduct {
   id: string;
@@ -288,8 +289,8 @@ interface AppContextType {
   activeFamilyId: string | null;
   family: FamilyState | null;
   switchFamily: (familyId: string) => void;
-  createFamily: (name: string) => string; // возвращает сгенерированный код
-  joinFamilyWithCode: (code: string) => boolean;
+  createFamily: (name: string) => Promise<string> | string; // возвращает сгенерированный код
+  joinFamilyWithCode: (code: string) => Promise<boolean> | boolean;
   updateFamilyName: (name: string) => void;
   leaveFamily: () => void;
   removeMemberFromFamily: (memberId: string) => void;
@@ -566,10 +567,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // Создание новой семьи / группы
-  const createFamily = (name: string): string => {
-    const newCode = generateRandomCode();
-    const familyId = `fam-${Date.now()}`;
+  const createFamily = async (name: string): Promise<string> => {
+    let newCode = generateRandomCode();
+    let familyId = `fam-${Date.now()}`;
     const familyName = name.trim() || 'Группа';
+
+    try {
+      const serverFam = await FamilyService.createFamily(familyName);
+      if (serverFam?.inviteCode) {
+        newCode = serverFam.inviteCode;
+      }
+      if (serverFam?.familyId) {
+        familyId = serverFam.familyId;
+      }
+    } catch (e) {
+      console.warn('Backend createFamily failed, using local mode:', e);
+    }
 
     const creatorUser: DevUser = {
       ...currentUser,
@@ -599,7 +612,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // Вступление в семью по 6-значному коду
-  const joinFamilyWithCode = (code: string): boolean => {
+  const joinFamilyWithCode = async (code: string): Promise<boolean> => {
     const formattedInput = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!formattedInput || formattedInput.length < 3) return false;
 
@@ -612,7 +625,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return true;
     }
 
-    // 2. Ищем в общем реестре известных семей
+    // 2. Ищем в общем реестре известных локальных семей
     const foundEntry = Object.values(knownFamilies).find(
       (f) => f.code.toUpperCase().replace(/[^A-Z0-9]/g, '') === formattedInput
     );
@@ -648,8 +661,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return true;
     }
 
-    // 3. Для удобства демо/тестирования: если введен любой валидный 6-символьный код,
-    // создаем новую совместную группу с этим кодом
+    // 3. Запрос к реальному бэкенду в облаке (POST /api/family/join)
+    try {
+      const serverFam = await FamilyService.joinFamily(formattedInput);
+      if (serverFam?.familyId) {
+        const joinedUser: DevUser = {
+          ...currentUser,
+          familyId: serverFam.familyId,
+          familyName: serverFam.name,
+        };
+
+        const serverFamily: FamilyState = {
+          id: serverFam.familyId,
+          name: serverFam.name,
+          code: serverFam.inviteCode || formattedInput,
+          members: [joinedUser],
+          customProducts: [],
+        };
+
+        setKnownFamilies((prev) => ({ ...prev, [serverFam.familyId]: serverFamily }));
+        setFamilies((prev) => [...prev, serverFamily]);
+        setActiveFamilyId(serverFam.familyId);
+        setCurrentUser(joinedUser);
+        setActiveCartId(serverFam.familyId);
+        setCarts((prev) => ({ ...prev, [serverFam.familyId]: {} }));
+
+        return true;
+      }
+    } catch (e) {
+      console.warn('Backend joinFamily failed:', e);
+    }
+
+    // 4. Для удобства демо/тестирования: если введен любой валидный 6-символьный код
     if (formattedInput.length === 6) {
       const dynamicFamilyId = `fam-join-${formattedInput.toLowerCase()}`;
       const dynamicFamilyName = `Группа #${formattedInput}`;

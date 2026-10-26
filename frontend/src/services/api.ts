@@ -30,6 +30,13 @@ export interface RegisterRequest {
   password: string;
 }
 
+export interface FamilyDto {
+  familyId: string;
+  name: string;
+  inviteCode: string;
+  role: string;
+}
+
 async function extractErrorMessage(res: Response, defaultMessage: string): Promise<string> {
   try {
     const errorData = await res.json();
@@ -144,5 +151,64 @@ export const AuthService = {
     const data: AuthResponse = await res.json();
     await this.saveToken(data.token);
     return data;
+  },
+};
+
+export const FamilyService = {
+  // Создание новой группы на бэкенде (POST /api/family/create)
+  async createFamily(name: string): Promise<FamilyDto> {
+    const token = await AuthService.getToken();
+    const res = await fetch(`${API_BASE_URL}/family/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ name }),
+    });
+
+    if (!res.ok) {
+      const errorMsg = await extractErrorMessage(res, `Ошибка создания группы: ${res.status}`);
+      throw new Error(errorMsg);
+    }
+
+    return await res.json();
+  },
+
+  // Вступление в группу по коду приглашения (POST /api/family/join)
+  async joinFamily(inviteCode: string): Promise<FamilyDto> {
+    const token = await AuthService.getToken();
+    const res = await fetch(`${API_BASE_URL}/family/join`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ inviteCode }),
+    });
+
+    if (!res.ok) {
+      const errorMsg = await extractErrorMessage(res, `Ошибка вступления в группу: ${res.status}`);
+      throw new Error(errorMsg);
+    }
+
+    return await res.json();
+  },
+
+  // Получение списка групп текущего пользователя (GET /api/family/my)
+  async getMyFamilies(): Promise<any[]> {
+    const token = await AuthService.getToken();
+    const res = await fetch(`${API_BASE_URL}/family/my`, {
+      method: 'GET',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!res.ok) {
+      return [];
+    }
+
+    return await res.json();
   },
 };

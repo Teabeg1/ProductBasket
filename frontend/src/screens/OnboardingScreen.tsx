@@ -33,50 +33,62 @@ export const OnboardingScreen: React.FC = () => {
 
   const pinInputRef = useRef<TextInput>(null);
 
+  const showAlert = (title: string, message?: string, onOk?: () => void) => {
+    if (Platform.OS === 'web') {
+      window.alert(title + (message ? `\n\n${message}` : ''));
+      if (onOk) onOk();
+    } else {
+      Alert.alert(title, message, onOk ? [{ text: 'Продолжить', onPress: onOk }] : undefined);
+    }
+  };
+
   const handleCreateFamily = async () => {
     const name = familyNameInput.trim() || 'Группа 67';
-    const newCode = createFamily(name);
+    let newCode = '';
+    try {
+      newCode = await createFamily(name);
+    } catch (e: any) {
+      showAlert('Ошибка создания группы', e.message || 'Не удалось создать группу');
+      return;
+    }
+
     try {
       await ClipboardExpo.setStringAsync(newCode);
     } catch {}
 
-    Alert.alert(
+    showAlert(
       'Группа успешно создана!',
       `Вы создали группу «${name}».\n\nКод приглашения: ${newCode}\n(код скопирован в буфер обмена)\n\nПоделитесь этим кодом с близкими, чтобы они могли присоединиться!`,
-      [
-        {
-          text: 'Перейти к покупкам',
-          onPress: () => navigation.navigate('Main'),
-        },
-      ]
+      () => navigation.navigate('Main')
     );
   };
 
-  const executeJoinFamily = (codeToJoin: string) => {
+  const executeJoinFamily = async (codeToJoin: string) => {
     Keyboard.dismiss();
     const cleanCode = codeToJoin.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (cleanCode.length === 0) {
-      Alert.alert('Введите код', 'Пожалуйста, введите 6-значный код приглашения.');
+      showAlert('Введите код', 'Пожалуйста, введите 6-значный код приглашения.');
       return;
     }
 
-    const success = joinFamilyWithCode(cleanCode);
+    let success = false;
+    try {
+      success = await joinFamilyWithCode(cleanCode);
+    } catch (e: any) {
+      showAlert('Ошибка вступления', e.message || 'Не удалось присоединиться к группе');
+      return;
+    }
 
     if (success) {
-      Alert.alert(
-        t('joinSuccessTitle'),
-        `${t('joinSuccessText')}!`,
-        [
-          {
-            text: 'Продолжить',
-            onPress: () => navigation.navigate('Main'),
-          },
-        ]
+      showAlert(
+        t('joinSuccessTitle') || 'Успешно!',
+        `${t('joinSuccessText') || 'Вы успешно присоединились к группе'}!`,
+        () => navigation.navigate('Main')
       );
     } else {
-      Alert.alert(
+      showAlert(
         'Код не найден',
-        `Группа с кодом «${cleanCode}» не найдена.\n\nУбедитесь, что группа уже создана под другим аккаунтом (например, Иван), или проверьте введённый код.`
+        `Группа с кодом «${cleanCode}» не найдена.\n\nУбедитесь, что группа уже создана или проверьте введённый код.`
       );
     }
   };
@@ -107,12 +119,12 @@ export const OnboardingScreen: React.FC = () => {
     try {
       const text = await ClipboardExpo.getStringAsync();
       if (!text) {
-        Alert.alert('Буфер пуст', 'В буфере обмена нет скопированного текста.');
+        showAlert('Буфер пуст', 'В буфере обмена нет скопированного текста.');
         return;
       }
       const sanitized = text.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
       if (sanitized.length === 0) {
-        Alert.alert('Некорректный код', 'В буфере обмена не найден код приглашения.');
+        showAlert('Некорректный код', 'В буфере обмена не найден код приглашения.');
         return;
       }
       setPinDigits(sanitized);
@@ -122,7 +134,7 @@ export const OnboardingScreen: React.FC = () => {
         }, 100);
       }
     } catch {
-      Alert.alert('Ошибка', 'Не удалось прочитать буфер обмена.');
+      showAlert('Ошибка', 'Не удалось прочитать буфер обмена.');
     }
   };
 

@@ -461,4 +461,96 @@ public class CartTests : IClassFixture<CustomWebApplicationFactory>
         var toggleBlocked = await client.PostAsync($"/api/cart/{item.Id}/toggle-purchased", null);
         Assert.Equal(HttpStatusCode.BadRequest, toggleBlocked.StatusCode);
     }
+
+    [Fact]
+    public async Task AddingItem_WhenItemTakenByAnotherUser_CreatesNewItemInsteadOfUpdatingOtherUserItem()
+    {
+        var (clientA, clientB, familyId) = await SetupFamilyWithTwoUsersAsync();
+
+        // 1. Alice добавляет молоко 2 шт и берет себе («Куплю я»)
+        var addRes1 = await clientA.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Молоко 3.2%",
+            Unit = "930 мл",
+            Count = 2
+        });
+        var item1 = await addRes1.Content.ReadFromJsonAsync<CartItemDto>();
+        await clientA.PostAsync($"/api/cart/{item1!.Id}/take", null);
+
+        // 2. Bob добавляет такое же молоко (1 шт)
+        var addRes2 = await clientB.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Молоко 3.2%",
+            Unit = "930 мл",
+            Count = 1
+        });
+        Assert.Equal(HttpStatusCode.Created, addRes2.StatusCode);
+        var item2 = await addRes2.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(item2);
+
+        // Должен быть создан отдельный пункт для Боба, чтобы товар Алисы не увеличивался
+        Assert.NotEqual(item1.Id, item2.Id);
+        Assert.Equal(1, item2.Count);
+        Assert.Null(item2.AssignedToUserId);
+
+        // Проверяем список
+        var listRes = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var items = await listRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.Equal(2, items!.Count);
+
+        var aliceItem = items.First(i => i.Id == item1.Id);
+        Assert.Equal(2, aliceItem.Count);
+        Assert.NotNull(aliceItem.AssignedToUserId);
+
+        var bobItem = items.First(i => i.Id == item2.Id);
+        Assert.Equal(1, bobItem.Count);
+        Assert.Null(bobItem.AssignedToUserId);
+    }
+
+    [Fact]
+    public async Task OperationByProductId_PrefersUnboughtItemOverBoughtItem()
+    {
+        var (clientA, clientB, familyId) = await SetupFamilyWithTwoUsersAsync();
+
+        var catRes = await clientA.GetAsync("/api/products");
+        var products = await catRes.Content.ReadFromJsonAsync<List<ProductDto>>();
+        var apple = products!.First(p => p.Title == "Яблоки");
+
+        // 1. Alice добавляет яблоки (8 шт) и отмечает купленными
+        var addRes1 = await clientA.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            ProductId = apple.Id,
+            Count = 8
+        });
+        var item1 = await addRes1.Content.ReadFromJsonAsync<CartItemDto>();
+        await clientA.PostAsync($"/api/cart/{item1!.Id}/take", null);
+        await clientA.PostAsync($"/api/cart/{item1.Id}/toggle-purchased", null);
+
+        // 2. Bob добавляет такие же яблоки (1 шт)
+        var addRes2 = await clientB.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            ProductId = apple.Id,
+            Count = 1
+        });
+        var item2 = await addRes2.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotEqual(item1.Id, item2!.Id);
+
+        // 3. Вызываем /decrement по ProductId (apple.Id)
+        // Должен уменьшиться и удалиться НЕКУПЛЕННЫЙ товар (item2), а купленный (item1) остаться нетронутым!
+        var decRes = await clientB.PostAsync($"/api/cart/items/{apple.Id}/decrement", null);
+        Assert.Equal(HttpStatusCode.OK, decRes.StatusCode);
+
+        var listRes = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var items = await listRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.Single(items!);
+
+        var remainingItem = items![0];
+        Assert.Equal(item1.Id, remainingItem.Id);
+        Assert.Equal(8, remainingItem.Count);
+        Assert.True(remainingItem.IsBought);
+    }
 }

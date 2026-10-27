@@ -61,12 +61,12 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
   const itemsList = Object.values(cartItems);
   const totalCount = itemsList.length;
 
-  const myCount = itemsList.filter((item) => item.assignedToUserId === currentUser.id).length;
+  const myCount = itemsList.filter((item) => item.assignedToUserId?.toLowerCase() === currentUser.id?.toLowerCase()).length;
   const unassignedCount = itemsList.filter((item) => item.assignedToUserId === null).length;
   const boughtCount = itemsList.filter((item) => item.isBought).length;
 
   const filteredItems = itemsList.filter((item) => {
-    if (filterTab === 'mine') return item.assignedToUserId === currentUser.id;
+    if (filterTab === 'mine') return item.assignedToUserId?.toLowerCase() === currentUser.id?.toLowerCase();
     if (filterTab === 'unassigned') return item.assignedToUserId === null;
     if (filterTab === 'bought') return !!item.isBought;
     return true;
@@ -414,9 +414,9 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
             {filteredItems.map((item) => {
               const b64 = item.imageKey ? PRODUCT_IMAGES[item.imageKey] : null;
               const imageUri = b64 ? `data:image/jpeg;base64,${b64}` : null;
-              const isAssignedToMe = item.assignedToUserId === currentUser.id;
-              const isAssignedToOther = item.assignedToUserId !== null && !isAssignedToMe;
-              const assignedUser = family?.members.find((m) => m.id === item.assignedToUserId);
+              const isAssignedToMe = !!item.assignedToUserId && item.assignedToUserId.toLowerCase() === currentUser.id.toLowerCase();
+              const isAssignedToOther = !!item.assignedToUserId && !isAssignedToMe;
+              const assignedUser = family?.members.find((m) => m.id.toLowerCase() === item.assignedToUserId?.toLowerCase());
 
               return (
                 <View

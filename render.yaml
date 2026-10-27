@@ -6,6 +6,7 @@ services:
     dockerContext: backend
     region: frankfurt
     plan: free
+    autoDeploy: true
     envVars:
       - key: ASPNETCORE_ENVIRONMENT
         value: Production

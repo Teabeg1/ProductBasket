@@ -70,7 +70,7 @@ public class CartHub : Hub
     public async Task AssignProduct(Guid cartItemId)
     {
         var userId = GetUserId();
-        var item = await FindItemAsync(cartItemId);
+        var item = await FindItemAsync(cartItemId, userId, preferUnbought: true);
         if (item == null) throw new HubException("Товар не найден");
 
         if (!await IsMemberAsync(userId, item.FamilyId))
@@ -118,7 +118,7 @@ public class CartHub : Hub
     public async Task TakeProduct(Guid cartItemId)
     {
         var userId = GetUserId();
-        var item = await FindItemAsync(cartItemId);
+        var item = await FindItemAsync(cartItemId, userId, preferUnbought: true);
         if (item == null) throw new HubException("Товар не найден");
 
         if (!await IsMemberAsync(userId, item.FamilyId))
@@ -156,7 +156,7 @@ public class CartHub : Hub
     public async Task ReleaseProduct(Guid cartItemId)
     {
         var userId = GetUserId();
-        var item = await FindItemAsync(cartItemId);
+        var item = await FindItemAsync(cartItemId, userId, preferUnbought: false);
         if (item == null) throw new HubException("Товар не найден");
 
         if (!await IsMemberAsync(userId, item.FamilyId))
@@ -188,7 +188,7 @@ public class CartHub : Hub
     public async Task TogglePurchased(Guid cartItemId)
     {
         var userId = GetUserId();
-        var item = await FindItemAsync(cartItemId);
+        var item = await FindItemAsync(cartItemId, userId, preferUnbought: false);
         if (item == null) throw new HubException("Товар не найден");
 
         if (!await IsMemberAsync(userId, item.FamilyId))
@@ -229,11 +229,35 @@ public class CartHub : Hub
         return userId;
     }
 
-    private async Task<CartItem?> FindItemAsync(Guid id)
+    private async Task<CartItem?> FindItemAsync(Guid id, Guid? userId = null, bool preferUnbought = true)
     {
-        return await _context.CartItems
+        var itemById = await _context.CartItems
             .Include(c => c.TakenByUser)
-            .FirstOrDefaultAsync(c => c.Id == id || c.ProductId == id);
+            .FirstOrDefaultAsync(c => c.Id == id);
+        if (itemById != null) return itemById;
+
+        var query = _context.CartItems
+            .Include(c => c.TakenByUser)
+            .Where(c => c.ProductId == id);
+
+        if (userId.HasValue)
+        {
+            var userFamilyIds = await _context.FamilyMembers
+                .Where(fm => fm.UserId == userId.Value)
+                .Select(fm => fm.FamilyId)
+                .ToListAsync();
+            query = query.Where(c => userFamilyIds.Contains(c.FamilyId));
+        }
+
+        if (preferUnbought)
+        {
+            var unbought = await query
+                .OrderByDescending(c => c.UpdatedAt)
+                .FirstOrDefaultAsync(c => !c.IsBought && c.Status != "Purchased");
+            if (unbought != null) return unbought;
+        }
+
+        return await query.OrderByDescending(c => c.UpdatedAt).FirstOrDefaultAsync();
     }
 
     private async Task<bool> IsMemberAsync(Guid userId, Guid familyId)

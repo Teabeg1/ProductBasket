@@ -194,22 +194,23 @@ export const CartScreen: React.FC<CartScreenProps> = ({
         >
           <View style={styles.grid}>
             {catalogProducts.map((prod) => {
-              const activeCartItem = Object.values(cartItems).find(
+              const activeCartItems = Object.values(cartItems).filter(
                 (it) =>
                   !it.isBought &&
                   (it.id.toLowerCase() === prod.id.toLowerCase() ||
                     it.title.trim().toLowerCase() === prod.title.trim().toLowerCase())
               );
-              const boughtCartItem = Object.values(cartItems).find(
+              const boughtCartItems = Object.values(cartItems).filter(
                 (it) =>
                   it.isBought &&
                   (it.id.toLowerCase() === prod.id.toLowerCase() ||
                     it.title.trim().toLowerCase() === prod.title.trim().toLowerCase())
               );
-              const inCartItem = activeCartItem || boughtCartItem || cartItems[prod.id];
-              const count = activeCartItem ? activeCartItem.count : 0;
-              const isBought = !activeCartItem && Boolean(boughtCartItem);
-              const targetCartId = activeCartItem ? activeCartItem.id : (inCartItem ? inCartItem.id : prod.id);
+              const count = activeCartItems.reduce((sum, it) => sum + it.count, 0);
+              const boughtCount = boughtCartItems.reduce((sum, it) => sum + it.count, 0);
+              const inCartItem = activeCartItems[0] || boughtCartItems[0] || cartItems[prod.id];
+              const isBought = count === 0 && boughtCount > 0;
+              const targetCartId = activeCartItems[0]?.id || boughtCartItems[0]?.id || prod.id;
               const b64 = prod.imageKey ? PRODUCT_IMAGES[prod.imageKey] : null;
               const imageUri = b64 ? `data:image/jpeg;base64,${b64}` : null;
               const isCustom = prod.id.startsWith('custom-');
@@ -243,11 +244,11 @@ export const CartScreen: React.FC<CartScreenProps> = ({
                           })()}
                     </Text>
                   </View>
-                ) : boughtCartItem ? (
+                ) : boughtCount > 0 ? (
                   <View style={[styles.boughtBadge, { backgroundColor: colors.success }]}>
                     <Check size={11} color="#FFFFFF" strokeWidth={3} style={{ marginRight: 3 }} />
                     <Text style={styles.boughtBadgeText} numberOfLines={1}>
-                      {boughtCartItem.count} куплено
+                      {boughtCount} куплено
                     </Text>
                   </View>
                 ) : isCustom ? (

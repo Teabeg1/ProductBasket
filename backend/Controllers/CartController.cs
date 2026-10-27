@@ -131,15 +131,20 @@ public class CartController : ControllerBase
             return BadRequest(new { message = "Название товара обязательно для заполнения" });
         }
 
-        // Проверяем, есть ли уже этот товар в корзине семьи/мероприятия
+        var cleanTitle = request.Title.Trim().ToLower();
+
+        // Проверяем, есть ли уже этот товар в корзине семьи/мероприятия.
+        // Товар можно объединять ТОЛЬКО если он еще НЕ куплен И (не взят никем ИЛИ взят текущим пользователем).
+        // Если товар уже куплен или взят другим участником — обязательно создается отдельный новый пункт (Bug 14).
         var existing = await _context.CartItems
             .Include(c => c.TakenByUser)
             .FirstOrDefaultAsync(c =>
                 c.FamilyId == targetFamilyId.Value &&
                 c.EventId == request.EventId &&
                 !c.IsBought && c.Status != "Purchased" &&
+                (c.TakenByUserId == null || c.TakenByUserId == userId.Value) &&
                 ((request.ProductId.HasValue && c.ProductId == request.ProductId) ||
-                 c.Title.ToLower() == request.Title.Trim().ToLower())
+                 c.Title.ToLower() == cleanTitle)
             );
 
         if (existing != null)
@@ -186,7 +191,7 @@ public class CartController : ControllerBase
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id);
+        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: true);
         if (item == null) return NotFound(new { message = "Товар не найден" });
 
         if (!await IsUserInFamilyAsync(userId.Value, item.FamilyId))
@@ -231,7 +236,7 @@ public class CartController : ControllerBase
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id);
+        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: true);
         if (item == null) return NotFound(new { message = "Товар не найден" });
 
         if (!await IsUserInFamilyAsync(userId.Value, item.FamilyId))
@@ -276,7 +281,7 @@ public class CartController : ControllerBase
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id);
+        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: true);
         if (item == null) return NotFound(new { message = "Товар не найден" });
 
         if (!await IsUserInFamilyAsync(userId.Value, item.FamilyId))
@@ -312,7 +317,7 @@ public class CartController : ControllerBase
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id);
+        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: true);
         if (item == null)
         {
             return NotFound(new CartActionResponse { Success = false, Message = "Товар не найден" });
@@ -379,7 +384,7 @@ public class CartController : ControllerBase
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id);
+        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: true);
         if (item == null)
         {
             return NotFound(new CartActionResponse { Success = false, Message = "Товар не найден" });
@@ -436,7 +441,7 @@ public class CartController : ControllerBase
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id);
+        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: false);
         if (item == null)
         {
             return NotFound(new CartActionResponse { Success = false, Message = "Товар не найден" });
@@ -490,7 +495,7 @@ public class CartController : ControllerBase
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id);
+        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: false);
         if (item == null)
         {
             return NotFound(new CartActionResponse { Success = false, Message = "Товар не найден" });
@@ -566,11 +571,36 @@ public class CartController : ControllerBase
         return await _context.FamilyMembers.AnyAsync(fm => fm.FamilyId == familyId && fm.UserId == userId);
     }
 
-    private async Task<CartItem?> FindCartItemByIdOrProductAsync(Guid id)
+    private async Task<CartItem?> FindCartItemByIdOrProductAsync(Guid id, Guid? userId = null, bool preferUnbought = true)
     {
-        return await _context.CartItems
+        var itemById = await _context.CartItems
             .Include(c => c.TakenByUser)
-            .FirstOrDefaultAsync(c => c.Id == id || c.ProductId == id);
+            .FirstOrDefaultAsync(c => c.Id == id);
+        if (itemById != null) return itemById;
+
+        // Поиск по ProductId среди товаров семей текущего пользователя
+        var query = _context.CartItems
+            .Include(c => c.TakenByUser)
+            .Where(c => c.ProductId == id);
+
+        if (userId.HasValue)
+        {
+            var userFamilyIds = await _context.FamilyMembers
+                .Where(fm => fm.UserId == userId.Value)
+                .Select(fm => fm.FamilyId)
+                .ToListAsync();
+            query = query.Where(c => userFamilyIds.Contains(c.FamilyId));
+        }
+
+        if (preferUnbought)
+        {
+            var unbought = await query
+                .OrderByDescending(c => c.UpdatedAt)
+                .FirstOrDefaultAsync(c => !c.IsBought && c.Status != "Purchased");
+            if (unbought != null) return unbought;
+        }
+
+        return await query.OrderByDescending(c => c.UpdatedAt).FirstOrDefaultAsync();
     }
 
     private async Task BroadcastStatusChangedAsync(CartItem item, string? takenByName)

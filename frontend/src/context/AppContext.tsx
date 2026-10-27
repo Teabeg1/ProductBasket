@@ -1439,16 +1439,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const currentKey = activeCartId.toLowerCase();
     const cleanTitle = item.title.trim().toLowerCase();
+    const uId = currentUser.id?.toLowerCase();
 
     setCarts((prev) => {
       const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || activeCartId;
       const currentCart = { ...(prev[cartKey] || {}) };
 
-      // Ищем существующий НЕКУПЛЕННЫЙ товар по ID или названию
+      // Ищем существующий НЕКУПЛЕННЫЙ товар, который не занят другим участником
       const existingKey = Object.keys(currentCart).find((k) => {
         const c = currentCart[k];
+        const cAssigned = c.assignedToUserId?.toLowerCase();
         return (
           !c.isBought &&
+          (!cAssigned || cAssigned === uId) &&
           (k.toLowerCase() === item.id.toLowerCase() ||
             c.id.toLowerCase() === item.id.toLowerCase() ||
             c.title.trim().toLowerCase() === cleanTitle)
@@ -1460,10 +1463,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         currentCart[existingKey] = { ...existing, count: existing.count + 1 };
       } else {
         // Создаем отдельный новый некупленный товар (Bug 14)
-        const newKey = currentCart[item.id] ? `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` : item.id;
-        currentCart[newKey] = {
+        const uniqueKey = currentCart[item.id] ? `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` : item.id;
+        currentCart[uniqueKey] = {
           ...item,
-          id: newKey,
+          id: uniqueKey,
           count: 1,
           assignedToUserId: null,
           isBought: false,
@@ -1486,7 +1489,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         count: 1,
         familyId: targetFamId,
         eventId: isEventCart ? activeCartId : undefined,
-      }).catch((e) => console.warn('Cloud sync addItem failed:', e));
+      })
+        .then((createdItem) => {
+          if (createdItem?.id) {
+            const lowerCreatedId = createdItem.id.toLowerCase();
+            setCarts((prev) => {
+              const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || activeCartId;
+              const currentCart = { ...(prev[cartKey] || {}) };
+              const tempKey = Object.keys(currentCart).find((k) => {
+                const it = currentCart[k];
+                return !it.isBought && it.title.trim().toLowerCase() === cleanTitle && k !== lowerCreatedId;
+              });
+              if (tempKey && tempKey !== lowerCreatedId) {
+                const itemData = currentCart[tempKey];
+                delete currentCart[tempKey];
+                currentCart[lowerCreatedId] = {
+                  ...itemData,
+                  id: lowerCreatedId,
+                  count: createdItem.count || itemData.count,
+                };
+                return { ...prev, [cartKey]: currentCart };
+              }
+              return prev;
+            });
+          }
+        })
+        .catch((e) => console.warn('Cloud sync addItem failed:', e));
     }
   };
 

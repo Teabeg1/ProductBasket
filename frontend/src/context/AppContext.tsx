@@ -1506,7 +1506,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 currentCart[lowerCreatedId] = {
                   ...itemData,
                   id: lowerCreatedId,
-                  count: createdItem.count || itemData.count,
+                  count: Math.max(createdItem.count || 1, itemData.count),
                 };
                 return { ...prev, [cartKey]: currentCart };
               }
@@ -1533,7 +1533,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || activeCartId;
       const currentCart = { ...(prev[cartKey] || {}) };
 
-      // Ищем сначала НЕКУПЛЕННЫЙ товар
+      // Ищем сначала НЕКУПЛЕННЫЙ товар (по id, ключу или названию)
       let realKey = Object.keys(currentCart).find((k) => {
         const c = currentCart[k];
         return (
@@ -1544,13 +1544,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         );
       });
 
+      // Fallback ТОЛЬКО по точному GUID/ключу конкретной записи (не по названию, чтобы не списать купленный товар!)
       if (!realKey) {
         realKey = Object.keys(currentCart).find((k) => {
           const c = currentCart[k];
           return (
             k.toLowerCase() === itemId.toLowerCase() ||
-            c.id.toLowerCase() === itemId.toLowerCase() ||
-            c.title.trim().toLowerCase() === itemId.trim().toLowerCase()
+            c.id.toLowerCase() === itemId.toLowerCase()
           );
         });
       }
@@ -1601,13 +1601,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         );
       });
 
+      // Fallback ТОЛЬКО по точному GUID/ключу записи, ни в коем случае не по названию
       if (!realKey) {
         realKey = Object.keys(currentCart).find((k) => {
           const c = currentCart[k];
           return (
             k.toLowerCase() === itemId.toLowerCase() ||
-            c.id.toLowerCase() === itemId.toLowerCase() ||
-            c.title.trim().toLowerCase() === itemId.trim().toLowerCase()
+            c.id.toLowerCase() === itemId.toLowerCase()
           );
         });
       }

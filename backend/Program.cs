@@ -16,16 +16,26 @@ if (!string.IsNullOrEmpty(cloudPort))
     builder.WebHost.UseUrls($"http://0.0.0.0:{cloudPort}");
 }
 
-// 1. Конфигурация базы данных PostgreSQL (Entity Framework Core)
+// 1. Конфигурация базы данных PostgreSQL / InMemory (Entity Framework Core)
 var rawConnectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
     ?? "Host=localhost;Port=5432;Database=productbasket;Username=postgres;Password=admin123";
+
+var useInMemory = string.Equals(Environment.GetEnvironmentVariable("USE_INMEMORY_DB"), "true", StringComparison.OrdinalIgnoreCase)
+    || rawConnectionString.StartsWith("InMemory", StringComparison.OrdinalIgnoreCase);
 
 var connectionString = ParsePostgresConnectionString(rawConnectionString);
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    options.UseNpgsql(connectionString)
-           .UseSnakeCaseNamingConvention();
+    if (useInMemory)
+    {
+        options.UseInMemoryDatabase("ProductBasketDb");
+    }
+    else
+    {
+        options.UseNpgsql(connectionString)
+               .UseSnakeCaseNamingConvention();
+    }
 });
 
 // 2. Сервисы авторизации и JWT
@@ -177,6 +187,16 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<CartHub>("/hubs/cart");
+
+// Диагностический эндпоинт для проверки развернутой версии и статуса БД
+app.MapGet("/api/version", () => Results.Ok(new
+{
+    service = "ProductBasket.Api",
+    version = "1.0.1",
+    build = "fix-bug-14-unbought-separation",
+    database = useInMemory ? "InMemory" : "PostgreSQL",
+    serverTimeUtc = DateTime.UtcNow
+}));
 
 // Перенаправление с корня на Swagger для удобства в облаке (Render / Railway)
 app.MapGet("/", () => Results.Redirect("/swagger"));

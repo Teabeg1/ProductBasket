@@ -185,13 +185,13 @@ public class CartController : ControllerBase
     /// <summary>
     /// Обновление количества товара в корзине (при 0 товар удаляется)
     /// </summary>
-    [HttpPut("items/{id:guid}")]
-    public async Task<IActionResult> UpdateItem([FromRoute] Guid id, [FromBody] UpdateCartItemRequest request)
+    [HttpPut("items/{id}")]
+    public async Task<IActionResult> UpdateItem([FromRoute] string id, [FromBody] UpdateCartItemRequest request)
     {
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: true);
+        var item = await FindCartItemByIdOrProductOrTitleAsync(id, userId.Value, preferUnbought: true);
         if (item == null) return NotFound(new { message = "Товар не найден" });
 
         if (!await IsUserInFamilyAsync(userId.Value, item.FamilyId))
@@ -230,13 +230,13 @@ public class CartController : ControllerBase
     /// <summary>
     /// Уменьшение количества товара на 1 (при достижении 0 товар удаляется)
     /// </summary>
-    [HttpPost("items/{id:guid}/decrement")]
-    public async Task<IActionResult> DecrementItem([FromRoute] Guid id)
+    [HttpPost("items/{id}/decrement")]
+    public async Task<IActionResult> DecrementItem([FromRoute] string id)
     {
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: true);
+        var item = await FindCartItemByIdOrProductOrTitleAsync(id, userId.Value, preferUnbought: true);
         if (item == null) return NotFound(new { message = "Товар не найден" });
 
         if (!await IsUserInFamilyAsync(userId.Value, item.FamilyId))
@@ -275,13 +275,13 @@ public class CartController : ControllerBase
     /// <summary>
     /// Удаление товара из корзины
     /// </summary>
-    [HttpDelete("items/{id:guid}")]
-    public async Task<IActionResult> DeleteItem([FromRoute] Guid id)
+    [HttpDelete("items/{id}")]
+    public async Task<IActionResult> DeleteItem([FromRoute] string id)
     {
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: true);
+        var item = await FindCartItemByIdOrProductOrTitleAsync(id, userId.Value, preferUnbought: true);
         if (item == null) return NotFound(new { message = "Товар не найден" });
 
         if (!await IsUserInFamilyAsync(userId.Value, item.FamilyId))
@@ -311,13 +311,13 @@ public class CartController : ControllerBase
     /// <summary>
     /// Единое действие назначения товара («Куплю я» / отмена своего выбора)
     /// </summary>
-    [HttpPost("{id:guid}/assign")]
-    public async Task<ActionResult<CartActionResponse>> AssignProduct([FromRoute] Guid id)
+    [HttpPost("{id}/assign")]
+    public async Task<ActionResult<CartActionResponse>> AssignProduct([FromRoute] string id)
     {
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: true);
+        var item = await FindCartItemByIdOrProductOrTitleAsync(id, userId.Value, preferUnbought: true);
         if (item == null)
         {
             return NotFound(new CartActionResponse { Success = false, Message = "Товар не найден" });
@@ -378,13 +378,13 @@ public class CartController : ControllerBase
     /// <summary>
     /// Действие «Куплю я» (закрепление за пользователем)
     /// </summary>
-    [HttpPost("{id:guid}/take")]
-    public async Task<ActionResult<CartActionResponse>> TakeProduct([FromRoute] Guid id)
+    [HttpPost("{id}/take")]
+    public async Task<ActionResult<CartActionResponse>> TakeProduct([FromRoute] string id)
     {
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: true);
+        var item = await FindCartItemByIdOrProductOrTitleAsync(id, userId.Value, preferUnbought: true);
         if (item == null)
         {
             return NotFound(new CartActionResponse { Success = false, Message = "Товар не найден" });
@@ -435,13 +435,13 @@ public class CartController : ControllerBase
     /// <summary>
     /// Отказ от покупки товара (перевод в статус «Не назначено»)
     /// </summary>
-    [HttpPost("{id:guid}/release")]
-    public async Task<ActionResult<CartActionResponse>> ReleaseProduct([FromRoute] Guid id)
+    [HttpPost("{id}/release")]
+    public async Task<ActionResult<CartActionResponse>> ReleaseProduct([FromRoute] string id)
     {
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: false);
+        var item = await FindCartItemByIdOrProductOrTitleAsync(id, userId.Value, preferUnbought: false);
         if (item == null)
         {
             return NotFound(new CartActionResponse { Success = false, Message = "Товар не найден" });
@@ -489,13 +489,13 @@ public class CartController : ControllerBase
     /// <summary>
     /// Отметка статуса «Куплено» (только участник, взявший товар)
     /// </summary>
-    [HttpPost("{id:guid}/toggle-purchased")]
-    public async Task<ActionResult<CartActionResponse>> TogglePurchased([FromRoute] Guid id)
+    [HttpPost("{id}/toggle-purchased")]
+    public async Task<ActionResult<CartActionResponse>> TogglePurchased([FromRoute] string id)
     {
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var item = await FindCartItemByIdOrProductAsync(id, userId.Value, preferUnbought: false);
+        var item = await FindCartItemByIdOrProductOrTitleAsync(id, userId.Value, preferUnbought: false);
         if (item == null)
         {
             return NotFound(new CartActionResponse { Success = false, Message = "Товар не найден" });
@@ -571,17 +571,58 @@ public class CartController : ControllerBase
         return await _context.FamilyMembers.AnyAsync(fm => fm.FamilyId == familyId && fm.UserId == userId);
     }
 
-    private async Task<CartItem?> FindCartItemByIdOrProductAsync(Guid id, Guid? userId = null, bool preferUnbought = true)
+    private async Task<CartItem?> FindCartItemByIdOrProductOrTitleAsync(string idOrTitle, Guid? userId = null, bool preferUnbought = true)
     {
-        var itemById = await _context.CartItems
-            .Include(c => c.TakenByUser)
-            .FirstOrDefaultAsync(c => c.Id == id);
-        if (itemById != null) return itemById;
+        if (string.IsNullOrWhiteSpace(idOrTitle)) return null;
 
-        // Поиск по ProductId среди товаров семей текущего пользователя
-        var query = _context.CartItems
+        var clean = idOrTitle.Trim().ToLowerInvariant();
+
+        // 1. Попытка распарсить как Guid (Id элемента корзины или ProductId)
+        if (Guid.TryParse(idOrTitle, out var guid))
+        {
+            var itemById = await _context.CartItems
+                .Include(c => c.TakenByUser)
+                .FirstOrDefaultAsync(c => c.Id == guid);
+            if (itemById != null) return itemById;
+
+            // Поиск по ProductId среди товаров семей текущего пользователя
+            var query = _context.CartItems
+                .Include(c => c.TakenByUser)
+                .Where(c => c.ProductId == guid);
+
+            if (userId.HasValue)
+            {
+                var userFamilyIds = await _context.FamilyMembers
+                    .Where(fm => fm.UserId == userId.Value)
+                    .Select(fm => fm.FamilyId)
+                    .ToListAsync();
+                query = query.Where(c => userFamilyIds.Contains(c.FamilyId));
+            }
+
+            if (preferUnbought)
+            {
+                return await query
+                    .OrderByDescending(c => c.UpdatedAt)
+                    .FirstOrDefaultAsync(c => !c.IsBought && c.Status != "Purchased");
+            }
+
+            return await query.OrderByDescending(c => c.UpdatedAt).FirstOrDefaultAsync();
+        }
+
+        // 2. Если передан строковый ключ (например prod-apple или русское название)
+        var titleToMatch = clean;
+        if (clean.StartsWith("prod-apple")) titleToMatch = "яблоки";
+        else if (clean.StartsWith("prod-milk")) titleToMatch = "молоко";
+        else if (clean.StartsWith("prod-mayo")) titleToMatch = "майонез";
+        else if (clean.StartsWith("prod-cucumbers")) titleToMatch = "огурцы";
+        else if (clean.StartsWith("prod-cheese")) titleToMatch = "сыр";
+        else if (clean.StartsWith("prod-pasta")) titleToMatch = "макароны";
+        else if (clean.StartsWith("prod-sugar")) titleToMatch = "сахар";
+        else if (clean.StartsWith("prod-salt")) titleToMatch = "соль";
+
+        var titleQuery = _context.CartItems
             .Include(c => c.TakenByUser)
-            .Where(c => c.ProductId == id);
+            .Where(c => c.Title.ToLower() == titleToMatch || c.Title.ToLower() == clean);
 
         if (userId.HasValue)
         {
@@ -589,18 +630,22 @@ public class CartController : ControllerBase
                 .Where(fm => fm.UserId == userId.Value)
                 .Select(fm => fm.FamilyId)
                 .ToListAsync();
-            query = query.Where(c => userFamilyIds.Contains(c.FamilyId));
+            titleQuery = titleQuery.Where(c => userFamilyIds.Contains(c.FamilyId));
         }
 
         if (preferUnbought)
         {
-            var unbought = await query
+            return await titleQuery
                 .OrderByDescending(c => c.UpdatedAt)
                 .FirstOrDefaultAsync(c => !c.IsBought && c.Status != "Purchased");
-            if (unbought != null) return unbought;
         }
 
-        return await query.OrderByDescending(c => c.UpdatedAt).FirstOrDefaultAsync();
+        return await titleQuery.OrderByDescending(c => c.UpdatedAt).FirstOrDefaultAsync();
+    }
+
+    private Task<CartItem?> FindCartItemByIdOrProductAsync(Guid id, Guid? userId = null, bool preferUnbought = true)
+    {
+        return FindCartItemByIdOrProductOrTitleAsync(id.ToString(), userId, preferUnbought);
     }
 
     private async Task BroadcastStatusChangedAsync(CartItem item, string? takenByName)

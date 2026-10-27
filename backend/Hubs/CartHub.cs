@@ -251,10 +251,9 @@ public class CartHub : Hub
 
         if (preferUnbought)
         {
-            var unbought = await query
+            return await query
                 .OrderByDescending(c => c.UpdatedAt)
                 .FirstOrDefaultAsync(c => !c.IsBought && c.Status != "Purchased");
-            if (unbought != null) return unbought;
         }
 
         return await query.OrderByDescending(c => c.UpdatedAt).FirstOrDefaultAsync();

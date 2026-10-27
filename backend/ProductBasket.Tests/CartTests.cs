@@ -553,4 +553,88 @@ public class CartTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Equal(8, remainingItem.Count);
         Assert.True(remainingItem.IsBought);
     }
+
+    [Fact]
+    public async Task DecrementByProductIdOrSlug_WhenOnlyBoughtItemExists_DoesNotTouchBoughtItem()
+    {
+        var (clientA, clientB, familyId) = await SetupFamilyWithTwoUsersAsync();
+
+        // 1. Alice добавляет 8 яблок и отмечает купленными
+        var addRes = await clientA.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Яблоки",
+            Count = 8
+        });
+        var item = await addRes.Content.ReadFromJsonAsync<CartItemDto>();
+        await clientA.PostAsync($"/api/cart/{item!.Id}/take", null);
+        await clientA.PostAsync($"/api/cart/{item.Id}/toggle-purchased", null);
+
+        // 2. Попытка уменьшить по строковому идентификатору "prod-apple"
+        // Поскольку товар уже куплен, unbought не найден -> возвращает 404, а купленный товар НЕ уменьшается!
+        var decRes = await clientB.PostAsync("/api/cart/items/prod-apple/decrement", null);
+        Assert.Equal(HttpStatusCode.NotFound, decRes.StatusCode);
+
+        // Проверяем, что 8 купленных яблок на месте
+        var listRes = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var items = await listRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.Single(items!);
+        Assert.Equal(8, items[0].Count);
+        Assert.True(items[0].IsBought);
+    }
+
+    [Fact]
+    public async Task DecrementByCatalogSlug_WhenUnboughtExists_DecrementsUnboughtItem()
+    {
+        var (clientA, clientB, familyId) = await SetupFamilyWithTwoUsersAsync();
+
+        // 1. Alice покупает 8 яблок
+        var addRes1 = await clientA.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Яблоки",
+            Count = 8
+        });
+        var item1 = await addRes1.Content.ReadFromJsonAsync<CartItemDto>();
+        await clientA.PostAsync($"/api/cart/{item1!.Id}/take", null);
+        await clientA.PostAsync($"/api/cart/{item1.Id}/toggle-purchased", null);
+
+        // 2. Bob добавляет 2 яблока (некупленные)
+        var addRes2 = await clientB.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Яблоки",
+            Count = 2
+        });
+        var item2 = await addRes2.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotEqual(item1.Id, item2!.Id);
+
+        // 3. Уменьшаем через "prod-apple"
+        var decRes = await clientB.PostAsync("/api/cart/items/prod-apple/decrement", null);
+        Assert.Equal(HttpStatusCode.OK, decRes.StatusCode);
+
+        // 4. Проверяем: некупленный уменьшился с 2 до 1, купленный остался 8
+        var listRes = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var items = await listRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.Equal(2, items!.Count);
+
+        var bought = items.First(i => i.Id == item1.Id);
+        Assert.Equal(8, bought.Count);
+        Assert.True(bought.IsBought);
+
+        var unbought = items.First(i => i.Id == item2.Id);
+        Assert.Equal(1, unbought.Count);
+        Assert.False(unbought.IsBought);
+    }
+
+    [Fact]
+    public async Task DiagnosticVersionEndpoint_ReturnsValidInfo()
+    {
+        var (client, _, _) = await SetupFamilyWithTwoUsersAsync();
+        var res = await client.GetAsync("/api/version");
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        var json = await res.Content.ReadAsStringAsync();
+        Assert.Contains("ProductBasket.Api", json);
+        Assert.Contains("fix-bug-14-unbought-separation", json);
+    }
 }

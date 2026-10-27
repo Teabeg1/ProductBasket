@@ -71,9 +71,26 @@ export const CartScreen: React.FC<CartScreenProps> = ({
   const currentEvent = isEventCart ? events?.find((e) => e.id === activeCartId) : null;
   const isEventCompleted = Boolean(isEventCart && currentEvent?.isCompleted);
 
-  // Каталог товаров объединяет базовые товары и пользовательские товары для текущей семьи
+  // Каталог товаров объединяет базовые товары, пользовательские товары и любые товары, уже находящиеся в корзине
   const familyCustomProducts = family?.customProducts || [];
   const catalogProducts: CatalogProduct[] = [...BASE_CATALOG_PRODUCTS, ...familyCustomProducts];
+
+  const knownTitles = new Set(catalogProducts.map((p) => p.title.trim().toLowerCase()));
+  const extraProducts: CatalogProduct[] = [];
+  Object.values(cartItems).forEach((it) => {
+    const clean = it.title.trim().toLowerCase();
+    if (!knownTitles.has(clean)) {
+      knownTitles.add(clean);
+      extraProducts.push({
+        id: it.id,
+        title: it.title,
+        unit: it.unit || '1 шт',
+        imageKey: it.imageKey || '',
+        emoji: it.emoji || '📦',
+      });
+    }
+  });
+  const displayCatalogProducts = [...catalogProducts, ...extraProducts];
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -193,7 +210,7 @@ export const CartScreen: React.FC<CartScreenProps> = ({
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.grid}>
-            {catalogProducts.map((prod) => {
+            {displayCatalogProducts.map((prod) => {
               const activeCartItems = Object.values(cartItems).filter(
                 (it) =>
                   !it.isBought &&
@@ -236,12 +253,14 @@ export const CartScreen: React.FC<CartScreenProps> = ({
                   <View style={[styles.boughtBadge, { backgroundColor: colors.success }]}>
                     <Check size={11} color="#FFFFFF" strokeWidth={3} style={{ marginRight: 3 }} />
                     <Text style={styles.boughtBadgeText} numberOfLines={1}>
-                      {inCartItem?.assignedToUserId?.toLowerCase() === currentUser.id.toLowerCase()
+                      {boughtCartItems.length === 1 && inCartItem?.assignedToUserId?.toLowerCase() === currentUser.id?.toLowerCase()
                         ? 'Куплено вами'
-                        : (() => {
+                        : boughtCartItems.length === 1
+                        ? (() => {
                             const buyer = family?.members.find((m) => m.id.toLowerCase() === inCartItem?.assignedToUserId?.toLowerCase());
-                            return buyer ? `Купил(а) ${buyer.name}` : 'Куплено';
-                          })()}
+                            return buyer ? `Купил(а) ${buyer.name}` : `${boughtCount} куплено`;
+                          })()
+                        : `${boughtCount} куплено`}
                     </Text>
                   </View>
                 ) : boughtCount > 0 ? (

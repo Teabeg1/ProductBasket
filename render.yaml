@@ -1,9 +1,9 @@
 services:
   - type: web
-    name: product-basket-api
+    name: productbasket
     runtime: docker
-    dockerfilePath: backend/Dockerfile
-    dockerContext: backend
+    dockerfilePath: Dockerfile
+    dockerContext: .
     region: frankfurt
     plan: free
     autoDeploy: true

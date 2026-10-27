@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
 // Базовый URL бэкенда на ASP.NET Core
-export const API_BASE_URL = 'https://product-basket-api.onrender.com/api';
+export const API_BASE_URL = 'https://productbasket.onrender.com/api';
 const TOKEN_KEY = 'user_jwt_token';
 
 let memoryToken: string | null = null;

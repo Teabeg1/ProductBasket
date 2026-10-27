@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -27,6 +27,29 @@ export const LoginScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+
+  useEffect(() => {
+    let isMounted = true;
+    const checkSavedSession = async () => {
+      try {
+        const token = await AuthService.getToken();
+        if (!token) return;
+        const profile = await AuthService.getProfile();
+        if (profile && isMounted) {
+          const { hasFamily } = await setCurrentUserFromAuth({ token, user: profile });
+          if (hasFamily) {
+            navigation.navigate('Main');
+          } else {
+            navigation.navigate('Onboarding');
+          }
+        }
+      } catch (e) {
+        // stay on login
+      }
+    };
+    checkSavedSession();
+    return () => { isMounted = false; };
+  }, []);
 
   const validate = () => {
     const newErrors: { email?: string; password?: string } = {};

@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.SignalR;
+using ProductBasket.Api.Hubs;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -15,12 +17,18 @@ public class AuthController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly ITokenService _tokenService;
+    private readonly IHubContext<CartHub> _hubContext;
     private readonly ILogger<AuthController> _logger;
 
-    public AuthController(AppDbContext context, ITokenService tokenService, ILogger<AuthController> logger)
+    public AuthController(
+        AppDbContext context,
+        ITokenService tokenService,
+        IHubContext<CartHub> hubContext,
+        ILogger<AuthController> logger)
     {
         _context = context;
         _tokenService = tokenService;
+        _hubContext = hubContext;
         _logger = logger;
     }
 
@@ -135,6 +143,16 @@ public class AuthController : ControllerBase
         user.DisplayName = trimmedName;
         await _context.SaveChangesAsync();
 
+        foreach (var fm in user.FamilyMembers)
+        {
+            await _hubContext.Clients.Group(fm.FamilyId.ToString()).SendAsync("MemberUpdated", new
+            {
+                familyId = fm.FamilyId,
+                userId = user.Id,
+                displayName = user.DisplayName
+            });
+        }
+
         var activeMember = user.FamilyMembers.FirstOrDefault();
         return Ok(MapUserDto(user, activeMember?.FamilyId, activeMember?.Family?.Name));
     }
@@ -219,8 +237,27 @@ public class AuthController : ControllerBase
             item.IsBought = false;
         }
 
+        // Находим все семьи пользователя для уведомления перед удалением
+        var userFamilyIds = await _context.FamilyMembers
+            .Where(fm => fm.UserId == userId.Value)
+            .Select(fm => fm.FamilyId)
+            .ToListAsync();
+
         _context.Users.Remove(user);
         await _context.SaveChangesAsync();
+
+        foreach (var famId in userFamilyIds)
+        {
+            await _hubContext.Clients.Group(famId.ToString()).SendAsync("MemberRemoved", new
+            {
+                familyId = famId,
+                userId = userId.Value
+            });
+            await _hubContext.Clients.Group(famId.ToString()).SendAsync("CartUpdated", new
+            {
+                familyId = famId
+            });
+        }
 
         return Ok(new { message = "Account deleted successfully" });
     }

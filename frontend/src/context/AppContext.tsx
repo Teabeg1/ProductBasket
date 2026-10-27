@@ -1,8 +1,12 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { DEV_USERS, DEMO_STAGE, type DevUser } from '../config/devConfig';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { Alert } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
+import { EMPTY_USER, type DevUser } from '../config/devConfig';
 import { getThemeColors, type AppTheme } from '../constants/theme';
 import { TRANSLATIONS, type Language } from '../constants/i18n';
-import { FamilyService, type AuthResponse } from '../services/api';
+import { FamilyService, AuthService, CartService, EventsService, ProductsService, type AuthResponse } from '../services/api';
+import { SignalRService } from '../services/signalr';
 
 export interface CatalogProduct {
   id: string;
@@ -42,220 +46,6 @@ export interface FamilyState {
   members: DevUser[];
   customProducts?: CatalogProduct[];
 }
-
-// Данные для Этапа 2 (демо богатого прототипа)
-// Группа 1: Родная группа (родители)
-const STAGE2_FAMILY_HOME: FamilyState = {
-  id: 'fam-home',
-  name: 'Группа Смирновых',
-  code: '7A9K2M',
-  members: [
-    { ...DEV_USERS.ivan, familyId: 'fam-home', familyName: 'Группа Смирновых' },
-    { ...DEV_USERS.elena, familyId: 'fam-home', familyName: 'Группа Смирновых' },
-    { ...DEV_USERS.denis, familyId: 'fam-home', familyName: 'Группа Смирновых' },
-  ],
-  customProducts: [
-    {
-      id: 'custom-home-pelmeni',
-      title: 'Домашние пельмени',
-      unit: '800 г • Заморозка',
-      imageKey: '',
-      emoji: '🥟',
-    },
-  ],
-};
-
-// Группа 2: Соседи по комнате в общежитии (студенты)
-// Иван учится в ВУЗе в другом городе и делит комнату с Артемом и Данилом
-const STAGE2_FAMILY_DORM: FamilyState = {
-  id: 'fam-dorm',
-  name: 'Общежитие: комната 304',
-  code: '3D8R9P',
-  members: [
-    { ...DEV_USERS.ivan, familyId: 'fam-dorm', familyName: 'Общежитие: комната 304' },
-    { ...DEV_USERS.artem, familyId: 'fam-dorm', familyName: 'Общежитие: комната 304' },
-    { ...DEV_USERS.danil, familyId: 'fam-dorm', familyName: 'Общежитие: комната 304' },
-  ],
-  customProducts: [
-    {
-      id: 'custom-dorm-noodles',
-      title: 'Лапша Доширак',
-      unit: '90 г • Острая',
-      imageKey: '',
-      emoji: '🍜',
-    },
-  ],
-};
-
-const STAGE2_INITIAL_FAMILIES: FamilyState[] = [STAGE2_FAMILY_HOME, STAGE2_FAMILY_DORM];
-
-const STAGE2_INITIAL_CARTS: Record<string, Record<string, CartItem>> = {
-  // Корзина группы Смирновых
-  'fam-home': {
-    'prod-milk': {
-      id: 'prod-milk',
-      title: 'Молоко',
-      unit: '930 мл • 3.2%',
-      imageKey: 'milk',
-      emoji: '🥛',
-      count: 2,
-      assignedToUserId: 'user-ivan',
-      isBought: true,
-    },
-    'prod-apple': {
-      id: 'prod-apple',
-      title: 'Яблоки',
-      unit: '1 кг • Сезонные',
-      imageKey: 'apple',
-      emoji: '🍎',
-      count: 1,
-      assignedToUserId: 'user-elena',
-      isBought: false,
-    },
-    'prod-cheese': {
-      id: 'prod-cheese',
-      title: 'Сыр',
-      unit: '200 г • Тильзитер',
-      imageKey: 'cheese',
-      emoji: '🧀',
-      count: 1,
-      assignedToUserId: null,
-      isBought: false,
-    },
-    'prod-pasta': {
-      id: 'prod-pasta',
-      title: 'Макароны',
-      unit: '450 г • Перья',
-      imageKey: 'pasta',
-      emoji: '🍝',
-      count: 2,
-      assignedToUserId: null,
-      isBought: false,
-    },
-    'custom-home-pelmeni': {
-      id: 'custom-home-pelmeni',
-      title: 'Домашние пельмени',
-      unit: '800 г • Заморозка',
-      imageKey: '',
-      emoji: '🥟',
-      count: 1,
-      assignedToUserId: 'user-ivan',
-      isBought: false,
-    },
-  },
-  // Корзина соседей по общежитию
-  'fam-dorm': {
-    'prod-sugar': {
-      id: 'prod-sugar',
-      title: 'Сахар',
-      unit: '1 кг • Кристаллический',
-      imageKey: 'sugar',
-      emoji: '🍚',
-      count: 1,
-      assignedToUserId: 'user-artem',
-      isBought: false,
-    },
-    'custom-dorm-noodles': {
-      id: 'custom-dorm-noodles',
-      title: 'Лапша Доширак',
-      unit: '90 г • Острая',
-      imageKey: '',
-      emoji: '🍜',
-      count: 4,
-      assignedToUserId: 'user-ivan',
-      isBought: true,
-    },
-    'prod-salt': {
-      id: 'prod-salt',
-      title: 'Соль',
-      unit: '1 кг • Каменная мелкая',
-      imageKey: 'salt',
-      emoji: '🧂',
-      count: 1,
-      assignedToUserId: null,
-      isBought: false,
-    },
-    'prod-cheese': {
-      id: 'prod-cheese',
-      title: 'Сыр',
-      unit: '200 г • Тильзитер',
-      imageKey: 'cheese',
-      emoji: '🧀',
-      count: 1,
-      assignedToUserId: 'user-danil',
-      isBought: false,
-    },
-  },
-  // Корзины мероприятий
-  'evt-picnic': {
-    'prod-cucumbers': {
-      id: 'prod-cucumbers',
-      title: 'Огурцы',
-      unit: '600 г • Гладкие',
-      imageKey: 'cucumbers',
-      emoji: '🥒',
-      count: 3,
-      assignedToUserId: 'user-ivan',
-      isBought: true,
-    },
-    'prod-cheese': {
-      id: 'prod-cheese',
-      title: 'Сыр',
-      unit: '200 г • Тильзитер',
-      imageKey: 'cheese',
-      emoji: '🧀',
-      count: 2,
-      assignedToUserId: null,
-      isBought: false,
-    },
-  },
-  'evt-hackathon': {
-    'prod-apple': {
-      id: 'prod-apple',
-      title: 'Яблоки',
-      unit: '1 кг • Сезонные',
-      imageKey: 'apple',
-      emoji: '🍎',
-      count: 2,
-      assignedToUserId: 'user-ivan',
-      isBought: true,
-    },
-  },
-};
-
-const STAGE2_INITIAL_EVENTS: AppEvent[] = [
-  {
-    id: 'evt-picnic',
-    title: 'Пикник на природе',
-    date: '18 мая',
-    emoji: '🏕️',
-    badgeBg: '#FFF0F4',
-    hasCart: true,
-    isCompleted: false,
-    familyId: 'fam-home',
-  },
-  {
-    id: 'evt-bday',
-    title: 'День рождения Дениса',
-    date: '25 мая',
-    emoji: '🎂',
-    badgeBg: '#FFF0F4',
-    hasCart: false,
-    isCompleted: false,
-    familyId: 'fam-home',
-  },
-  {
-    id: 'evt-hackathon',
-    title: 'Студенческий хакатон',
-    date: '10 мая',
-    emoji: '💻',
-    badgeBg: '#F0FDF4',
-    hasCart: true,
-    isCompleted: true,
-    completedAt: '10 мая',
-    familyId: 'fam-dorm',
-  },
-];
 
 // Уровни масштабирования текста
 export type FontScaleLevel = 'small' | 'medium' | 'large';
@@ -341,6 +131,50 @@ const generateRandomCode = (): string => {
   return result;
 };
 
+const Storage = {
+  async setItem(key: string, value: string): Promise<void> {
+    if (Platform.OS === 'web') {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem(key, value);
+        }
+      } catch {}
+      return;
+    }
+    try {
+      await SecureStore.setItemAsync(key, value);
+    } catch {}
+  },
+  async getItem(key: string): Promise<string | null> {
+    if (Platform.OS === 'web') {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          return window.localStorage.getItem(key);
+        }
+      } catch {}
+      return null;
+    }
+    try {
+      return await SecureStore.getItemAsync(key);
+    } catch {
+      return null;
+    }
+  },
+  async removeItem(key: string): Promise<void> {
+    if (Platform.OS === 'web') {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.removeItem(key);
+        }
+      } catch {}
+      return;
+    }
+    try {
+      await SecureStore.deleteItemAsync(key);
+    } catch {}
+  },
+};
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Theme & Font Scale & Language
   const [theme, setTheme] = useState<AppTheme>('light');
@@ -349,58 +183,350 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const fontScaleMultiplier = FONT_SCALE_MULTIPLIERS[fontScale];
 
   // Список всех известных семей (реестр)
-  const [knownFamilies, setKnownFamilies] = useState<Record<string, FamilyState>>(() => {
-    const initial: Record<string, FamilyState> = {};
-    if (DEMO_STAGE === 2) {
-      initial['fam-home'] = STAGE2_FAMILY_HOME;
-      initial['fam-dorm'] = STAGE2_FAMILY_DORM;
-    }
-    return initial;
-  });
+  const [knownFamilies, setKnownFamilies] = useState<Record<string, FamilyState>>({});
 
   // Семьи, в которых состоит текущий пользователь
-  const [families, setFamilies] = useState<FamilyState[]>(() => {
-    return DEMO_STAGE === 2 ? STAGE2_INITIAL_FAMILIES : [];
-  });
+  const [families, setFamilies] = useState<FamilyState[]>([]);
 
   // Идентификатор активной семьи
-  const [activeFamilyId, setActiveFamilyId] = useState<string | null>(() => {
-    return DEMO_STAGE === 2 ? STAGE2_FAMILY_HOME.id : null;
-  });
+  const [activeFamilyId, setActiveFamilyId] = useState<string | null>(null);
 
   // Текущая активная семья
   const family = families.find((f) => f.id === activeFamilyId) || null;
 
-  // Активный пользователь
-  const [currentUser, setCurrentUser] = useState<DevUser>(() => {
-    if (DEMO_STAGE === 2) {
-      return {
-        ...DEV_USERS.ivan,
-        familyId: STAGE2_FAMILY_HOME.id,
-        familyName: STAGE2_FAMILY_HOME.name,
-      };
-    }
-    return {
-      ...DEV_USERS.ivan,
-      familyId: null,
-      familyName: null,
-    };
-  });
+  // Активный пользователь (чистое состояние до входа)
+  const [currentUser, setCurrentUser] = useState<DevUser>(EMPTY_USER);
 
   // Хранилище корзин: ключом выступает familyId или eventId
-  const [carts, setCarts] = useState<Record<string, Record<string, CartItem>>>(() => {
-    return DEMO_STAGE === 2 ? STAGE2_INITIAL_CARTS : { main: {} };
-  });
+  const [carts, setCarts] = useState<Record<string, Record<string, CartItem>>>({});
 
-  // Идентификатор активной корзины: familyId активной семьи или eventId мероприятия
-  const [activeCartId, setActiveCartId] = useState<string>(() => {
-    return DEMO_STAGE === 2 ? STAGE2_FAMILY_HOME.id : 'main';
-  });
+  // Идентификатор активной корзины
+  const [activeCartId, setActiveCartId] = useState<string>('main');
 
   // Мероприятия
-  const [events, setEvents] = useState<AppEvent[]>(() => {
-    return DEMO_STAGE === 2 ? STAGE2_INITIAL_EVENTS : [];
-  });
+  const [events, setEvents] = useState<AppEvent[]>([]);
+
+
+  // Подключение к SignalR и синхронизация в реальном времени (корзина, статусы, семья, участники, мероприятия)
+  useEffect(() => {
+    if (!currentUser.id || !activeFamilyId) return;
+
+    let unsubStatus: (() => void) | undefined;
+    let unsubCart: (() => void) | undefined;
+    let unsubFamily: (() => void) | undefined;
+    let unsubMemberJoined: (() => void) | undefined;
+    let unsubMemberRemoved: (() => void) | undefined;
+    let unsubEventCreated: (() => void) | undefined;
+    let unsubEventDeleted: (() => void) | undefined;
+    let unsubEventCompleted: (() => void) | undefined;
+    let unsubMemberUpdated: (() => void) | undefined;
+    let unsubEventCartCreated: (() => void) | undefined;
+
+    const setupSignalR = async () => {
+      await SignalRService.start();
+      await SignalRService.joinFamily(activeFamilyId);
+
+      // 1. Загрузка начальной корзины из облака
+      try {
+        const cloudItems = await CartService.getCart(activeFamilyId);
+        if (Array.isArray(cloudItems) && cloudItems.length > 0) {
+          const mapped: Record<string, CartItem> = {};
+          cloudItems.forEach((c) => {
+            mapped[c.id] = {
+              id: c.id,
+              title: c.title,
+              unit: c.unit,
+              imageKey: c.imageKey || '',
+              emoji: c.emoji || '📦',
+              count: c.count,
+              assignedToUserId: c.assignedToUserId || c.takenByUserId || null,
+              isBought: c.isBought,
+            };
+          });
+          setCarts((prev) => ({
+            ...prev,
+            [activeFamilyId]: mapped,
+          }));
+        }
+      } catch (e) {
+        console.warn('Failed to load initial cart from cloud:', e);
+      }
+
+      // 2. Загрузка мероприятий из облака
+      try {
+        const cloudEvents = await EventsService.getEvents(activeFamilyId);
+        if (Array.isArray(cloudEvents)) {
+          setEvents(
+            cloudEvents.map((e) => ({
+              id: String(e.id),
+              title: e.title,
+              date: e.eventDate,
+              emoji: e.icon || '🎉',
+              badgeBg: e.badgeBg || '#FFF0F4',
+              hasCart: e.hasCart,
+              isCompleted: e.isCompleted,
+              completedAt: e.completedAt,
+              familyId: e.familyId,
+            }))
+          );
+        }
+      } catch (e) {
+        console.warn('Failed to load events from cloud:', e);
+      }
+
+      // 3. Подписка на изменение статусов товаров (кто взял товар / статус «Куплено»)
+      unsubStatus = SignalRService.onProductStatusChanged((data) => {
+        const targetId = data.cartItemId || data.productId;
+        setCarts((prev) => {
+          const currentFamCart = { ...(prev[activeFamilyId] || {}) };
+          const key = Object.keys(currentFamCart).find((k) => currentFamCart[k].id === targetId || k === targetId);
+          if (key) {
+            currentFamCart[key] = {
+              ...currentFamCart[key],
+              assignedToUserId: data.assignedToUserId || data.takenByUserId || null,
+              isBought: data.isBought,
+            };
+            return {
+              ...prev,
+              [activeFamilyId]: currentFamCart,
+            };
+          }
+          return prev;
+        });
+      });
+
+      // 4. Подписка на обновление состава корзины (добавление, удаление, изменение количества)
+      unsubCart = SignalRService.onCartUpdated(async (data) => {
+        if (data.familyId === activeFamilyId) {
+          try {
+            const freshItems = await CartService.getCart(activeFamilyId);
+            const mapped: Record<string, CartItem> = {};
+            freshItems.forEach((c) => {
+              mapped[c.id] = {
+                id: c.id,
+                title: c.title,
+                unit: c.unit,
+                imageKey: c.imageKey || '',
+                emoji: c.emoji || '📦',
+                count: c.count,
+                assignedToUserId: c.assignedToUserId || c.takenByUserId || null,
+                isBought: c.isBought,
+              };
+            });
+            setCarts((prev) => ({
+              ...prev,
+              [activeFamilyId]: mapped,
+            }));
+          } catch (err) {
+            console.warn('Failed to refresh cart on SignalR CartUpdated:', err);
+          }
+        }
+      });
+
+      // 5. Подписка на переименование группы (Bug 2)
+      unsubFamily = SignalRService.onFamilyUpdated((data) => {
+        setFamilies((prev) =>
+          prev.map((f) => (f.id === data.familyId ? { ...f, name: data.name } : f))
+        );
+        setKnownFamilies((prev) =>
+          prev[data.familyId]
+            ? { ...prev, [data.familyId]: { ...prev[data.familyId], name: data.name } }
+            : prev
+        );
+        if (activeFamilyId === data.familyId) {
+          setCurrentUser((prev) => ({ ...prev, familyName: data.name }));
+        }
+      });
+
+      // 6. Подписка на вступление нового участника (Bug 3)
+      unsubMemberJoined = SignalRService.onMemberJoined((data) => {
+        if (!data?.member) return;
+        const newMember: DevUser = {
+          id: String(data.member.id),
+          name: data.member.displayName || data.member.name || 'Участник',
+          email: data.member.email,
+          avatarChar: data.member.avatarChar || (data.member.displayName || 'У')[0].toUpperCase(),
+          avatarBg: data.member.avatarBg || '#E0E7FF',
+          avatarColor: data.member.avatarColor || '#3730A3',
+          familyId: data.familyId,
+          familyName: data.member.familyName || '',
+        };
+
+        setFamilies((prev) =>
+          prev.map((f) => {
+            if (f.id !== data.familyId) return f;
+            if (f.members.some((m) => m.id === newMember.id)) return f;
+            return { ...f, members: [...f.members, newMember] };
+          })
+        );
+
+        setKnownFamilies((prev) => {
+          const target = prev[data.familyId];
+          if (!target) return prev;
+          if (target.members.some((m) => m.id === newMember.id)) return prev;
+          return {
+            ...prev,
+            [data.familyId]: {
+              ...target,
+              members: [...target.members, newMember],
+            },
+          };
+        });
+      });
+
+      // 7. Подписка на удаление участника или выход из группы (Bug 5, Bug 7, Bug 8, Bug 11, Bug 12)
+      unsubMemberRemoved = SignalRService.onMemberRemoved((data) => {
+        if (data.userId === currentUser.id) {
+          // Текущего пользователя удалили или он вышел
+          setFamilies((prev) => {
+            const remaining = prev.filter((f) => f.id !== data.familyId);
+            if (activeFamilyId === data.familyId) {
+              if (remaining.length > 0) {
+                const next = remaining[0];
+                setActiveFamilyId(next.id);
+                setCurrentUser((u) => ({ ...u, familyId: next.id, familyName: next.name }));
+                setActiveCartId(next.id);
+                Storage.setItem('@product_basket_last_active_family', next.id).catch(() => {});
+                Alert.alert('Группа', `Вы вышли из группы (или были исключены). Переключено на группу «${next.name}».`);
+              } else {
+                setActiveFamilyId('');
+                setCurrentUser((u) => ({ ...u, familyId: null, familyName: null }));
+                setActiveCartId('main');
+                Storage.removeItem('@product_basket_last_active_family').catch(() => {});
+                Alert.alert('Группа', 'Вы вышли из группы (или были исключены).');
+              }
+            }
+            return remaining;
+          });
+          setKnownFamilies((prev) => {
+            const copy = { ...prev };
+            delete copy[data.familyId];
+            return copy;
+          });
+          return;
+        }
+
+        // Другого участника удалили из группы:
+        setFamilies((prev) =>
+          prev.map((f) => {
+            if (f.id !== data.familyId) return f;
+            return {
+              ...f,
+              members: f.members.filter((m) => m.id !== data.userId),
+            };
+          })
+        );
+        setKnownFamilies((prev) => {
+          const target = prev[data.familyId];
+          if (!target) return prev;
+          return {
+            ...prev,
+            [data.familyId]: {
+              ...target,
+              members: target.members.filter((m) => m.id !== data.userId),
+            },
+          };
+        });
+
+        // Снимаем товары, закрепленные за удаленным участником
+        setCarts((prev) => {
+          const currentFamCart = { ...(prev[data.familyId] || {}) };
+          let modified = false;
+          Object.keys(currentFamCart).forEach((k) => {
+            if (currentFamCart[k].assignedToUserId === data.userId) {
+              currentFamCart[k] = {
+                ...currentFamCart[k],
+                assignedToUserId: null,
+                isBought: false,
+              };
+              modified = true;
+            }
+          });
+          if (modified) {
+            return { ...prev, [data.familyId]: currentFamCart };
+          }
+          return prev;
+        });
+      });
+
+      // Подписка на обновление имени участника (Bug 7)
+      unsubMemberUpdated = SignalRService.onMemberUpdated((data) => {
+        if (!data?.userId) return;
+        setFamilies((prev) =>
+          prev.map((f) => {
+            if (f.id !== data.familyId) return f;
+            return {
+              ...f,
+              members: f.members.map((m) =>
+                m.id === data.userId ? { ...m, name: data.displayName } : m
+              ),
+            };
+          })
+        );
+        if (data.userId === currentUser.id) {
+          setCurrentUser((u) => ({ ...u, name: data.displayName }));
+        }
+      });
+
+      // Подписка на создание корзины мероприятия (Bug 3)
+      unsubEventCartCreated = SignalRService.onEventCartCreated((data) => {
+        setEvents((prev) =>
+          prev.map((e) => (e.id === data.eventId ? { ...e, hasCart: true } : e))
+        );
+      });
+
+      // 8. Подписка на создание, удаление и завершение мероприятий (Bug 4)
+      unsubEventCreated = SignalRService.onEventCreated(async (data) => {
+        if (data.familyId === activeFamilyId) {
+          try {
+            const freshEvents = await EventsService.getEvents(activeFamilyId);
+            if (Array.isArray(freshEvents)) {
+              setEvents(
+                freshEvents.map((e) => ({
+                  id: String(e.id),
+                  title: e.title,
+                  date: e.eventDate,
+                  emoji: e.icon || '🎉',
+                  badgeBg: e.badgeBg || '#FFF0F4',
+                  hasCart: e.hasCart,
+                  isCompleted: e.isCompleted,
+                  completedAt: e.completedAt,
+                  familyId: e.familyId,
+                }))
+              );
+            }
+          } catch (e) {
+            console.warn('Failed to refresh events on EventCreated:', e);
+          }
+        }
+      });
+
+      unsubEventDeleted = SignalRService.onEventDeleted((data) => {
+        setEvents((prev) => prev.filter((e) => e.id !== data.eventId));
+      });
+
+      unsubEventCompleted = SignalRService.onEventCompleted((data) => {
+        setEvents((prev) =>
+          prev.map((e) => (e.id === data.eventId ? { ...e, isCompleted: true, completedAt: data.completedAt } : e))
+        );
+      });
+    };
+
+    setupSignalR();
+
+    return () => {
+      if (unsubStatus) unsubStatus();
+      if (unsubCart) unsubCart();
+      if (unsubFamily) unsubFamily();
+      if (unsubMemberJoined) unsubMemberJoined();
+      if (unsubMemberRemoved) unsubMemberRemoved();
+      if (unsubEventCreated) unsubEventCreated();
+      if (unsubEventDeleted) unsubEventDeleted();
+      if (unsubEventCompleted) unsubEventCompleted();
+      if (unsubMemberUpdated) unsubMemberUpdated();
+      if (unsubEventCartCreated) unsubEventCartCreated();
+    };
+  }, [currentUser.id, activeFamilyId]);
 
   const colors = getThemeColors(theme);
 
@@ -418,41 +544,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return str;
   };
 
-  const [registeredUsers, setRegisteredUsers] = useState<Record<string, DevUser>>({
-    'ivan@mail.ru': DEV_USERS.ivan,
-    'elena@mail.ru': DEV_USERS.elena,
-    'denis@mail.ru': DEV_USERS.denis,
-    'artem@mail.ru': DEV_USERS.artem,
-    'danil@mail.ru': DEV_USERS.danil,
-  });
+  const [registeredUsers, setRegisteredUsers] = useState<Record<string, DevUser>>({});
 
   const setCurrentUserByEmail = (email: string): { user: DevUser; hasFamily: boolean } => {
     const cleanEmail = email.trim().toLowerCase();
     let baseUser = registeredUsers[cleanEmail];
 
     if (!baseUser) {
-      if (cleanEmail.includes('elena')) {
-        baseUser = DEV_USERS.elena;
-      } else if (cleanEmail.includes('denis')) {
-        baseUser = DEV_USERS.denis;
-      } else if (cleanEmail.includes('artem')) {
-        baseUser = DEV_USERS.artem;
-      } else if (cleanEmail.includes('danil')) {
-        baseUser = DEV_USERS.danil;
-      } else {
-        const derivedName = cleanEmail.split('@')[0] || 'Пользователь';
-        const formattedName = derivedName.charAt(0).toUpperCase() + derivedName.slice(1);
-        baseUser = {
-          id: `usr-${cleanEmail.replace(/[^a-z0-9]/g, '') || Date.now()}`,
-          name: formattedName,
-          email: cleanEmail,
-          avatarChar: formattedName.charAt(0).toUpperCase(),
-          avatarBg: '#E0E7FF',
-          avatarColor: '#3730A3',
-          familyId: null,
-          familyName: null,
-        };
-      }
+      const derivedName = cleanEmail.split('@')[0] || 'Пользователь';
+      const formattedName = derivedName.charAt(0).toUpperCase() + derivedName.slice(1);
+      baseUser = {
+        id: `usr-${cleanEmail.replace(/[^a-z0-9]/g, '') || Date.now()}`,
+        name: formattedName,
+        email: cleanEmail,
+        avatarChar: formattedName.charAt(0).toUpperCase(),
+        avatarBg: '#E0E7FF',
+        avatarColor: '#3730A3',
+        familyId: null,
+        familyName: null,
+      };
     }
 
     // Находим все семьи, в которых состоит данный пользователь
@@ -491,7 +601,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let userFamilies: FamilyState[] = [];
 
     try {
-      const myFamilies = await FamilyService.getMyFamilies();
+      const myFamilies = await FamilyService.getMyFamilies(authData.token);
       if (Array.isArray(myFamilies) && myFamilies.length > 0) {
         userFamilies = myFamilies.map((f: any) => ({
           id: String(f.id),
@@ -534,7 +644,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     const hasFamily = userFamilies.length > 0;
-    const activeFam = hasFamily ? userFamilies[0] : null;
+    let activeFam = hasFamily ? userFamilies[0] : null;
+
+    try {
+      const savedActiveId = await Storage.getItem('@product_basket_last_active_family');
+      if (savedActiveId && userFamilies.some((f) => f.id === savedActiveId)) {
+        activeFam = userFamilies.find((f) => f.id === savedActiveId) || activeFam;
+      }
+    } catch {}
+
+    // Подгрузка пользовательских товаров с бэкенда (Bug 9)
+    try {
+      for (const fam of userFamilies) {
+        const prods = await ProductsService.getProducts(fam.id);
+        const customs = prods.filter((p: any) => p.familyId != null || (p.category && p.category.includes('Свои')));
+        fam.customProducts = customs.map((cp: any) => ({
+          id: String(cp.id),
+          title: cp.title,
+          unit: cp.unit || '1 шт',
+          emoji: cp.emoji || '🛍️',
+          imageKey: cp.imageKey || '',
+        }));
+      }
+    } catch (err) {
+      console.warn('Failed to load custom products from backend:', err);
+    }
 
     const loggedUser: DevUser = {
       id: String(authData.user.id),
@@ -592,14 +726,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCurrentUser(newUser);
   };
 
-  const logout = () => {
-    setCurrentUser({
-      ...DEV_USERS.ivan,
-      familyId: null,
-      familyName: null,
-    });
+  const logout = async () => {
+    try {
+      await AuthService.removeToken();
+    } catch {}
+    setCurrentUser(EMPTY_USER);
     setFamilies([]);
     setActiveFamilyId(null);
+    setCarts({});
+    setEvents([]);
+    setKnownFamilies({});
     setActiveCartId('main');
   };
 
@@ -629,6 +765,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ),
       }))
     );
+
+    AuthService.updateProfile(trimmed).catch((e) =>
+      console.warn('Cloud updateProfile failed:', e)
+    );
   };
 
   // Переключение между семьями пользователя
@@ -652,6 +792,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         [target.id]: prev[target.id] || {},
       }));
     }
+
+    Storage.setItem('@product_basket_last_active_family', target.id).catch(() => {});
   };
 
   // Создание новой семьи / группы
@@ -695,6 +837,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...prev,
       [familyId]: {},
     }));
+
+    SignalRService.joinFamily(familyId).catch((e) => console.warn('SignalR joinFamily failed:', e));
 
     return newCode;
   };
@@ -753,71 +897,59 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       const serverFam = await FamilyService.joinFamily(formattedInput);
       if (serverFam?.familyId) {
+        let membersList: DevUser[] = [];
+        try {
+          const cloudMembers = await FamilyService.getMembers(serverFam.familyId);
+          if (Array.isArray(cloudMembers) && cloudMembers.length > 0) {
+            membersList = cloudMembers.map((m: any) => ({
+              id: String(m.id),
+              name: m.displayName || m.name || 'Участник',
+              email: m.email,
+              avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
+              avatarBg: m.avatarBg || '#E0E7FF',
+              avatarColor: m.avatarColor || '#3730A3',
+              familyId: serverFam.familyId,
+              familyName: serverFam.name,
+            }));
+          }
+        } catch (memErr) {
+          console.warn('Failed to fetch members for joined family:', memErr);
+        }
+
         const joinedUser: DevUser = {
           ...currentUser,
           familyId: serverFam.familyId,
           familyName: serverFam.name,
         };
 
+        if (!membersList.some((m) => m.id === joinedUser.id)) {
+          membersList.push(joinedUser);
+        }
+
         const serverFamily: FamilyState = {
           id: serverFam.familyId,
           name: serverFam.name,
           code: serverFam.inviteCode || formattedInput,
-          members: [joinedUser],
+          members: membersList,
           customProducts: [],
         };
 
         setKnownFamilies((prev) => ({ ...prev, [serverFam.familyId]: serverFamily }));
-        setFamilies((prev) => [...prev, serverFamily]);
+        setFamilies((prev) => {
+          const exists = prev.some((f) => f.id === serverFam.familyId);
+          return exists ? prev.map((f) => (f.id === serverFam.familyId ? serverFamily : f)) : [...prev, serverFamily];
+        });
         setActiveFamilyId(serverFam.familyId);
         setCurrentUser(joinedUser);
         setActiveCartId(serverFam.familyId);
-        setCarts((prev) => ({ ...prev, [serverFam.familyId]: {} }));
+        setCarts((prev) => ({ ...prev, [serverFam.familyId]: prev[serverFam.familyId] || {} }));
+
+        SignalRService.joinFamily(serverFam.familyId).catch((e) => console.warn('SignalR joinFamily failed:', e));
 
         return true;
       }
     } catch (e) {
       console.warn('Backend joinFamily failed:', e);
-    }
-
-    // 4. Для удобства демо/тестирования: если введен любой валидный 6-символьный код
-    if (formattedInput.length === 6) {
-      const dynamicFamilyId = `fam-join-${formattedInput.toLowerCase()}`;
-      const dynamicFamilyName = `Группа #${formattedInput}`;
-      const joinedUser: DevUser = {
-        ...currentUser,
-        familyId: dynamicFamilyId,
-        familyName: dynamicFamilyName,
-      };
-
-      const dynamicFamily: FamilyState = {
-        id: dynamicFamilyId,
-        name: dynamicFamilyName,
-        code: formattedInput,
-        members: [
-          joinedUser,
-          {
-            id: `usr-demo-${formattedInput}`,
-            name: 'Участник группы',
-            email: `member-${formattedInput.toLowerCase()}@mail.ru`,
-            familyId: dynamicFamilyId,
-            familyName: dynamicFamilyName,
-            avatarChar: 'У',
-            avatarBg: '#E0E7FF',
-            avatarColor: '#3730A3',
-          },
-        ],
-        customProducts: [],
-      };
-
-      setKnownFamilies((prev) => ({ ...prev, [dynamicFamilyId]: dynamicFamily }));
-      setFamilies((prev) => [...prev, dynamicFamily]);
-      setActiveFamilyId(dynamicFamilyId);
-      setCurrentUser(joinedUser);
-      setActiveCartId(dynamicFamilyId);
-      setCarts((prev) => ({ ...prev, [dynamicFamilyId]: {} }));
-
-      return true;
     }
 
     return false;
@@ -837,6 +969,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...prev,
       familyName: trimmed,
     }));
+
+    FamilyService.updateFamilyName(trimmed, family.id).catch((e) =>
+      console.warn('Backend updateFamilyName failed:', e)
+    );
   };
 
   const leaveFamily = () => {
@@ -891,6 +1027,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }));
       setActiveCartId('main');
     }
+
+    FamilyService.leaveFamily(targetFamilyId).catch((e) => console.warn('Backend leaveFamily failed:', e));
   };
 
   const removeMemberFromFamily = (memberId: string) => {
@@ -935,19 +1073,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (currentUser.id === memberId) {
       leaveFamily();
+    } else {
+      FamilyService.removeMember(memberId, targetFamilyId).catch((e) =>
+        console.warn('Backend removeMember failed:', e)
+      );
     }
   };
 
-  // Добавление пользовательского товара локально в указанную семью
-  const addCustomProduct = (
+  // Добавление пользовательского товара в указанную семью с сохранением на бэкенде (Bug 9)
+  const addCustomProduct = async (
     familyId: string,
     product: { title: string; unit: string; emoji: string }
   ) => {
     const trimmedTitle = product.title.trim();
     if (!trimmedTitle) return;
 
+    const tempId = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const newProduct: CatalogProduct = {
-      id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: tempId,
       title: trimmedTitle,
       unit: product.unit.trim() || '1 шт',
       imageKey: '',
@@ -976,10 +1119,37 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
         : prev
     );
+
+    try {
+      const created = await ProductsService.createCustomProduct({
+        title: trimmedTitle,
+        unit: product.unit.trim() || '1 шт',
+        category: 'Свои товары',
+        emoji: product.emoji || '🛍️',
+        familyId: familyId,
+      });
+      if (created?.id) {
+        setFamilies((prev) =>
+          prev.map((f) =>
+            f.id === familyId
+              ? {
+                  ...f,
+                  customProducts: (f.customProducts || []).map((cp) =>
+                    cp.id === tempId ? { ...cp, id: String(created.id) } : cp
+                  ),
+                }
+              : f
+          )
+        );
+      }
+    } catch (e) {
+      console.warn('Backend createCustomProduct failed:', e);
+    }
   };
 
   // Удаление пользовательского товара из семьи
   const deleteCustomProduct = (familyId: string, productId: string) => {
+    ProductsService.deleteProduct(productId).catch((e) => console.warn('Backend deleteProduct failed:', e));
     setFamilies((prev) =>
       prev.map((f) =>
         f.id === familyId
@@ -1059,6 +1229,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         [activeCartId]: updatedCart,
       };
     });
+
+    if (activeFamilyId) {
+      CartService.addItem({
+        title: item.title,
+        unit: item.unit,
+        imageKey: item.imageKey,
+        emoji: item.emoji,
+        count: 1,
+        familyId: activeFamilyId,
+        eventId: isEventCart ? activeCartId : undefined,
+      }).catch((e) => console.warn('Cloud sync addItem failed:', e));
+    }
   };
 
   const decrementCartItem = (itemId: string) => {
@@ -1078,6 +1260,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         [activeCartId]: updatedCart,
       };
     });
+
+    CartService.decrementItem(itemId).catch((e) => console.warn('Cloud sync decrement failed:', e));
   };
 
   const deleteFromCart = (itemId: string) => {
@@ -1090,6 +1274,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         [activeCartId]: updatedCart,
       };
     });
+
+    CartService.deleteItem(itemId).catch((e) => console.warn('Cloud sync delete failed:', e));
   };
 
   // Распределение товара: взять себе или снять выбор
@@ -1107,6 +1293,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           [itemId]: { ...prev[activeCartId][itemId], assignedToUserId: currentUser.id },
         },
       }));
+      CartService.assignProduct(item.id).catch((e) => console.warn('Cloud assignProduct failed:', e));
       return { success: true };
     }
 
@@ -1119,6 +1306,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           [itemId]: { ...prev[activeCartId][itemId], assignedToUserId: null, isBought: false },
         },
       }));
+      CartService.assignProduct(item.id).catch((e) => console.warn('Cloud assignProduct failed:', e));
       return { success: true };
     }
 
@@ -1126,7 +1314,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const allKnownUsers = [
       ...(family?.members || []),
       ...Object.values(registeredUsers),
-      ...Object.values(DEV_USERS),
     ];
     const otherUser = allKnownUsers.find((m) => m.id === item.assignedToUserId);
     const otherName = otherUser ? otherUser.name : 'другой участник';
@@ -1153,7 +1340,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const allKnownUsers = [
         ...(family?.members || []),
         ...Object.values(registeredUsers),
-        ...Object.values(DEV_USERS),
       ];
       const otherUser = allKnownUsers.find((m) => m.id === item.assignedToUserId);
       const otherName = otherUser ? otherUser.name : 'другой участник';
@@ -1179,15 +1365,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     });
 
+    CartService.togglePurchased(item.id).catch((e) => console.warn('Cloud togglePurchased failed:', e));
+
     return { success: true };
   };
 
   const totalCartItemsCount = Object.values(cartItems).reduce((sum, item) => sum + item.count, 0);
 
-  const createEvent = (data: { title: string; date: string; emoji: string; familyId?: string }) => {
+  const createEvent = async (data: { title: string; date: string; emoji: string; familyId?: string }) => {
     const targetFamilyId = data.familyId || activeFamilyId || (families.length > 0 ? families[0].id : undefined);
+    const tempId = `evt-${Date.now()}`;
     const newEvt: AppEvent = {
-      id: `evt-${Date.now()}`,
+      id: tempId,
       title: data.title,
       date: data.date,
       emoji: data.emoji,
@@ -1197,6 +1386,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       familyId: targetFamilyId,
     };
     setEvents((prev) => [newEvt, ...prev]);
+
+    if (targetFamilyId) {
+      try {
+        const cloudEvt = await EventsService.createEvent({
+          title: data.title,
+          eventDate: data.date,
+          icon: data.emoji,
+          familyId: targetFamilyId,
+        });
+        if (cloudEvt?.id) {
+          setEvents((prev) =>
+            prev.map((e) => (e.id === tempId ? { ...e, id: String(cloudEvt.id) } : e))
+          );
+        }
+      } catch (e) {
+        console.warn('Backend createEvent failed:', e);
+      }
+    }
   };
 
   const deleteEvent = (id: string) => {
@@ -1209,6 +1416,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (activeCartId === id) {
       openMainCart();
     }
+    EventsService.deleteEvent(id).catch((e) => console.warn('Backend deleteEvent failed:', e));
   };
 
   const createEventCart = (id: string) => {
@@ -1219,6 +1427,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...prev,
       [id]: prev[id] || {},
     }));
+    EventsService.createEventCart(id).catch((e) => console.warn('Backend createEventCart failed:', e));
   };
 
   const getEventCartStats = (
@@ -1249,6 +1458,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       )
     );
 
+    EventsService.completeEvent(eventId).catch((e) => console.warn('Backend completeEvent failed:', e));
+
     // Если сейчас открыта корзина этого завершаемого мероприятия, возвращаемся к общей корзине
     if (activeCartId === eventId) {
       const targetCartKey = activeFamilyId || 'main';
@@ -1268,34 +1479,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const resetToInitialState = () => {
-    if (DEMO_STAGE === 2) {
-      setCarts(STAGE2_INITIAL_CARTS);
-      setEvents(STAGE2_INITIAL_EVENTS);
-      setFamilies(STAGE2_INITIAL_FAMILIES);
-      setKnownFamilies({
-        'fam-home': STAGE2_FAMILY_HOME,
-        'fam-dorm': STAGE2_FAMILY_DORM,
-      });
-      setActiveFamilyId(STAGE2_FAMILY_HOME.id);
-      setActiveCartId(STAGE2_FAMILY_HOME.id);
-      setCurrentUser({
-        ...DEV_USERS.ivan,
-        familyId: STAGE2_FAMILY_HOME.id,
-        familyName: STAGE2_FAMILY_HOME.name,
-      });
-    } else {
-      setCarts({ main: {} });
-      setActiveCartId('main');
-      setEvents([]);
-      setFamilies([]);
-      setKnownFamilies({});
-      setActiveFamilyId(null);
-      setCurrentUser({
-        ...DEV_USERS.ivan,
-        familyId: null,
-        familyName: null,
-      });
-    }
+    setCarts({});
+    setEvents([]);
+    setFamilies([]);
+    setKnownFamilies({});
+    setActiveFamilyId(null);
+    setActiveCartId('main');
+    setCurrentUser(EMPTY_USER);
   };
 
   return (

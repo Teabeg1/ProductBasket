@@ -20,12 +20,13 @@ import {
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useApp } from '../context/AppContext';
+import { AuthService } from '../services/api';
 import { TextScaleSlider } from '../components/TextScaleSlider';
 import type { AuthNavigationProp } from '../navigation/types';
 
 export const AdvancedSettingsScreen: React.FC = () => {
   const navigation = useNavigation<AuthNavigationProp>();
-  const { colors, t } = useApp();
+  const { colors, t, logout } = useApp();
 
   const [pushEnabled, setPushEnabled] = useState(true);
   const [takeProductNotify, setTakeProductNotify] = useState(true);
@@ -40,7 +41,13 @@ export const AdvancedSettingsScreen: React.FC = () => {
         {
           text: t('delete'),
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
+            try {
+              await AuthService.deleteAccount();
+            } catch (e) {
+              console.warn('Failed to delete account from cloud:', e);
+            }
+            await logout();
             navigation.navigate('Login');
           },
         },

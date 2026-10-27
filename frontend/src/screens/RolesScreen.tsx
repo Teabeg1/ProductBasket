@@ -19,7 +19,6 @@ import {
 } from 'lucide-react-native';
 import { useApp, type FamilyState } from '../context/AppContext';
 import { PRODUCT_IMAGES } from '../constants/productImages';
-import { DEMO_STAGE, DEV_USERS } from '../config/devConfig';
 import { FamilyMembersModal } from '../components/FamilyMembersModal';
 import { FamilySwitcherModal } from '../components/FamilySwitcherModal';
 
@@ -54,28 +53,6 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
   const [switcherModalVisible, setSwitcherModalVisible] = useState(false);
   const [selectedFamilyForMembers, setSelectedFamilyForMembers] = useState<FamilyState | null>(null);
 
-  if (DEMO_STAGE === 1) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: colors.textDark }]}>
-            {t('rolesTitle')}
-          </Text>
-        </View>
-        <View style={styles.stage1EmptyContainer}>
-          <View style={[styles.stage1IconCircle, { backgroundColor: colors.primaryLight }]}>
-            <ShoppingBag size={44} color={colors.primary} strokeWidth={2.2} />
-          </View>
-          <Text style={[styles.emptyTitle, { color: colors.textDark }]}>
-            Распределение ролей
-          </Text>
-          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-            Назначение обязанностей по покупкам появится на Этапе 2
-          </Text>
-        </View>
-      </View>
-    );
-  }
 
   const itemsList = Object.values(cartItems);
   const totalCount = itemsList.length;
@@ -175,14 +152,14 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
                     </View>
                   ))}
                 </View>
-                <View>
+                <View style={{ flex: 1, minWidth: 0, justifyContent: 'center' }}>
                   <View style={styles.famTitleRow}>
                     <Text style={[styles.famTitleText, { color: colors.textDark }]} numberOfLines={1}>
                       {family.name}
                     </Text>
                     <ChevronDown size={14} color={colors.textSecondary} style={{ marginLeft: 3 }} />
                   </View>
-                  <Text style={[styles.memberCountText, { color: colors.primary }]}>
+                  <Text style={[styles.memberCountText, { color: colors.primary }]} numberOfLines={1} ellipsizeMode="tail">
                     {family.members.length} участников • Список ➔
                   </Text>
                 </View>
@@ -388,9 +365,7 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
               const imageUri = b64 ? `data:image/jpeg;base64,${b64}` : null;
               const isAssignedToMe = item.assignedToUserId === currentUser.id;
               const isAssignedToOther = item.assignedToUserId !== null && !isAssignedToMe;
-              const assignedUser =
-                family?.members.find((m) => m.id === item.assignedToUserId) ||
-                Object.values(DEV_USERS).find((u) => u.id === item.assignedToUserId);
+              const assignedUser = family?.members.find((m) => m.id === item.assignedToUserId);
 
               return (
                 <View
@@ -467,7 +442,11 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
                       {item.count} шт • {item.unit}
                     </Text>
                     {item.isBought && (
-                      <Text style={[styles.boughtStatusSubtext, { color: colors.success }]}>
+                      <Text
+                        style={[styles.boughtStatusSubtext, { color: colors.success }]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
                         {isAssignedToMe ? '✓ Куплено вами' : `✓ Купил(а) ${assignedUser ? assignedUser.name : 'участник'}`}
                       </Text>
                     )}
@@ -476,17 +455,28 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
                   {/* Кнопка / бейдж распределения и статуса */}
                   <View style={styles.actionCol}>
                     {item.isBought ? (
-                      // ТОВАР УЖЕ КУПЛЕН: Кнопка со статусом "Куплено" (зеленая)
-                      <TouchableOpacity
-                        style={[styles.boughtStatusBtn, { backgroundColor: colors.successLight, borderColor: colors.success }]}
-                        activeOpacity={0.7}
-                        onPress={() => handleTogglePurchased(item.id, item.title)}
-                      >
-                        <CheckCircle2 size={13} color={colors.success} strokeWidth={2.6} style={{ marginRight: 4 }} />
-                        <Text style={[styles.boughtStatusBtnText, { color: colors.success }]}>
-                          Куплено
-                        </Text>
-                      </TouchableOpacity>
+                      // ТОВАР УЖЕ КУПЛЕН: Кнопка для выбравшего / Бейдж для остальных участников
+                      isAssignedToMe ? (
+                        <TouchableOpacity
+                          style={[styles.boughtStatusBtn, { backgroundColor: colors.successLight, borderColor: colors.success }]}
+                          activeOpacity={0.7}
+                          onPress={() => handleTogglePurchased(item.id, item.title)}
+                        >
+                          <CheckCircle2 size={13} color={colors.success} strokeWidth={2.6} style={{ marginRight: 4 }} />
+                          <Text style={[styles.boughtStatusBtnText, { color: colors.success }]}>
+                            Куплено
+                          </Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View
+                          style={[styles.boughtStatusBtn, { backgroundColor: colors.successLight, borderColor: colors.success, opacity: 0.95 }]}
+                        >
+                          <CheckCircle2 size={13} color={colors.success} strokeWidth={2.6} style={{ marginRight: 4 }} />
+                          <Text style={[styles.boughtStatusBtnText, { color: colors.success }]} numberOfLines={1}>
+                            Куплено
+                          </Text>
+                        </View>
+                      )
                     ) : isAssignedToMe ? (
                       // ТОВАР ВЗЯЛ Я: Кнопка "Куплю я" + возможность сразу отметить "Куплено"
                       <View style={styles.assignedActionsRow}>
@@ -672,7 +662,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    marginRight: 10,
+    minWidth: 0,
+    marginRight: 8,
   },
   avatarGroup: {
     flexDirection: 'row',
@@ -710,6 +701,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 0,
   },
   switchGroupBtn: {
     flexDirection: 'row',
@@ -825,6 +817,7 @@ const styles = StyleSheet.create({
   },
   itemDetails: {
     flex: 1,
+    minWidth: 0,
     marginRight: 8,
   },
   itemTitle: {
@@ -843,6 +836,8 @@ const styles = StyleSheet.create({
   actionCol: {
     alignItems: 'flex-end',
     justifyContent: 'center',
+    flexShrink: 0,
+    maxWidth: 140,
   },
   assignedActionsRow: {
     flexDirection: 'row',
@@ -876,6 +871,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 10,
     borderWidth: 1,
+    maxWidth: 130,
   },
   boughtStatusBtnText: {
     fontSize: 12,

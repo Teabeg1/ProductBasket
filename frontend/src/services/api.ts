@@ -171,6 +171,42 @@ export const AuthService = {
     if (!res.ok) return null;
     return await res.json();
   },
+
+  // Удаление своего аккаунта (DELETE /api/auth/account)
+  async deleteAccount(): Promise<boolean> {
+    const token = await this.getToken();
+    if (!token) return false;
+    const res = await fetch(`${API_BASE_URL}/auth/account`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (res.ok) {
+      await this.removeToken();
+      return true;
+    }
+    return false;
+  },
+
+  // Обновление имени пользователя (PUT /api/auth/profile)
+  async updateProfile(displayName: string): Promise<UserDto> {
+    const token = await this.getToken();
+    const res = await fetch(`${API_BASE_URL}/auth/profile`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ displayName }),
+    });
+
+    if (!res.ok) {
+      const errorMsg = await extractErrorMessage(res, 'Не удалось обновить имя');
+      throw new Error(errorMsg);
+    }
+    return await res.json();
+  },
 };
 
 export const FamilyService = {
@@ -215,8 +251,8 @@ export const FamilyService = {
   },
 
   // Получение списка групп текущего пользователя (GET /api/family/my)
-  async getMyFamilies(): Promise<any[]> {
-    const token = await AuthService.getToken();
+  async getMyFamilies(tokenOverride?: string): Promise<any[]> {
+    const token = tokenOverride || (await AuthService.getToken());
     const res = await fetch(`${API_BASE_URL}/family/my`, {
       method: 'GET',
       headers: {
@@ -229,5 +265,318 @@ export const FamilyService = {
     }
 
     return await res.json();
+  },
+
+  // Переименование группы (PUT /api/family/{id}/name или PUT /api/family/name)
+  async updateFamilyName(name: string, familyId?: string): Promise<{ success: boolean; name: string }> {
+    const token = await AuthService.getToken();
+    const url = familyId ? `${API_BASE_URL}/family/${familyId}/name` : `${API_BASE_URL}/family/name`;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ name }),
+    });
+
+    if (!res.ok) {
+      const errorMsg = await extractErrorMessage(res, 'Не удалось переименовать группу');
+      throw new Error(errorMsg);
+    }
+    return await res.json();
+  },
+
+  // Получение участников группы (GET /api/family/{familyId}/members)
+  async getMembers(familyId?: string): Promise<any[]> {
+    const token = await AuthService.getToken();
+    const url = familyId ? `${API_BASE_URL}/family/${familyId}/members` : `${API_BASE_URL}/family/members`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  },
+
+  // Удаление участника из группы (DELETE /api/family/{familyId}/members/{memberUserId})
+  async removeMember(memberUserId: string, familyId?: string): Promise<boolean> {
+    const token = await AuthService.getToken();
+    const url = familyId
+      ? `${API_BASE_URL}/family/${familyId}/members/${memberUserId}`
+      : `${API_BASE_URL}/family/members/${memberUserId}`;
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    return res.ok;
+  },
+
+  // Выход из группы (POST /api/family/{familyId}/leave)
+  async leaveFamily(familyId?: string): Promise<boolean> {
+    const token = await AuthService.getToken();
+    const url = familyId ? `${API_BASE_URL}/family/${familyId}/leave` : `${API_BASE_URL}/family/leave`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    return res.ok;
+  },
+};
+
+export interface EventDto {
+  id: string;
+  familyId: string;
+  title: string;
+  eventDate: string;
+  icon?: string;
+  badgeBg?: string;
+  hasCart: boolean;
+  isCompleted: boolean;
+  completedAt?: string;
+  membersCount: number;
+}
+
+export const EventsService = {
+  // Получение списка мероприятий (GET /api/events)
+  async getEvents(familyId?: string): Promise<EventDto[]> {
+    const token = await AuthService.getToken();
+    const url = familyId ? `${API_BASE_URL}/events?familyId=${familyId}` : `${API_BASE_URL}/events`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  },
+
+  // Создание нового мероприятия (POST /api/events)
+  async createEvent(payload: { title: string; eventDate: string; icon?: string; familyId?: string }): Promise<EventDto> {
+    const token = await AuthService.getToken();
+    const res = await fetch(`${API_BASE_URL}/events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const errorMsg = await extractErrorMessage(res, 'Не удалось создать мероприятие');
+      throw new Error(errorMsg);
+    }
+    return await res.json();
+  },
+
+  // Создание корзины для мероприятия (POST /api/events/{id}/cart)
+  async createEventCart(eventId: string): Promise<boolean> {
+    const token = await AuthService.getToken();
+    const res = await fetch(`${API_BASE_URL}/events/${eventId}/cart`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    return res.ok;
+  },
+
+  // Завершение мероприятия (POST /api/events/{id}/complete)
+  async completeEvent(eventId: string): Promise<boolean> {
+    const token = await AuthService.getToken();
+    const res = await fetch(`${API_BASE_URL}/events/${eventId}/complete`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    return res.ok;
+  },
+
+  // Удаление мероприятия (DELETE /api/events/{id})
+  async deleteEvent(eventId: string): Promise<boolean> {
+    const token = await AuthService.getToken();
+    const res = await fetch(`${API_BASE_URL}/events/${eventId}`, {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    return res.ok;
+  },
+};
+
+export interface CartItemDto {
+  id: string;
+  productId?: string;
+  title: string;
+  unit: string;
+  imageKey?: string;
+  imageUrl?: string;
+  emoji?: string;
+  count: number;
+  status: string;
+  assignedToUserId?: string;
+  takenByUserId?: string;
+  takenByName?: string;
+  isBought: boolean;
+  eventId?: string;
+}
+
+export const CartService = {
+  // Получение товаров в корзине семьи или мероприятия (GET /api/cart)
+  async getCart(familyId?: string, eventId?: string): Promise<CartItemDto[]> {
+    const token = await AuthService.getToken();
+    const params = new URLSearchParams();
+    if (familyId) params.append('familyId', familyId);
+    if (eventId) params.append('eventId', eventId);
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+
+    const res = await fetch(`${API_BASE_URL}/cart${queryString}`, {
+      method: 'GET',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!res.ok) return [];
+    return await res.json();
+  },
+
+  // Добавление товара в корзину (POST /api/cart/items)
+  async addItem(request: {
+    productId?: string;
+    title?: string;
+    unit?: string;
+    imageKey?: string;
+    imageUrl?: string;
+    emoji?: string;
+    count?: number;
+    familyId?: string;
+    eventId?: string;
+  }): Promise<CartItemDto | null> {
+    const token = await AuthService.getToken();
+    const res = await fetch(`${API_BASE_URL}/cart/items`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!res.ok) return null;
+    return await res.json();
+  },
+
+  // Уменьшение количества товара (POST /api/cart/items/{id}/decrement)
+  async decrementItem(cartItemId: string): Promise<void> {
+    const token = await AuthService.getToken();
+    await fetch(`${API_BASE_URL}/cart/items/${cartItemId}/decrement`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  },
+
+  // Удаление товара из корзины (DELETE /api/cart/items/{id})
+  async deleteItem(cartItemId: string): Promise<void> {
+    const token = await AuthService.getToken();
+    await fetch(`${API_BASE_URL}/cart/items/${cartItemId}`, {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  },
+
+  // Назначение ответственного «Куплю я» (POST /api/cart/{id}/assign)
+  async assignProduct(cartItemId: string): Promise<{ success: boolean; message?: string }> {
+    const token = await AuthService.getToken();
+    const res = await fetch(`${API_BASE_URL}/cart/${cartItemId}/assign`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!res.ok) {
+      const err = await extractErrorMessage(res, 'Не удалось назначить товар');
+      return { success: false, message: err };
+    }
+    const data = await res.json();
+    return { success: data.success, message: data.message };
+  },
+
+  // Переключение статуса «Куплено» (POST /api/cart/{id}/toggle-purchased)
+  async togglePurchased(cartItemId: string): Promise<{ success: boolean; message?: string }> {
+    const token = await AuthService.getToken();
+    const res = await fetch(`${API_BASE_URL}/cart/${cartItemId}/toggle-purchased`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!res.ok) {
+      const err = await extractErrorMessage(res, 'Не удалось изменить статус покупки');
+      return { success: false, message: err };
+    }
+    const data = await res.json();
+    return { success: data.success, message: data.message };
+  },
+};
+
+export const ProductsService = {
+  // Получение каталога товаров семьи (включая Свои товары) (GET /api/products?familyId=...)
+  async getProducts(familyId?: string): Promise<any[]> {
+    const token = await AuthService.getToken();
+    const url = familyId ? `${API_BASE_URL}/products?familyId=${familyId}` : `${API_BASE_URL}/products`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  },
+
+  // Создание своего товара для семьи (POST /api/products/custom)
+  async createCustomProduct(payload: { title: string; unit?: string; category?: string; emoji?: string; familyId: string }): Promise<any> {
+    const token = await AuthService.getToken();
+    const res = await fetch(`${API_BASE_URL}/products/custom`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const errorMsg = await extractErrorMessage(res, 'Не удалось создать товар');
+      throw new Error(errorMsg);
+    }
+    return await res.json();
+  },
+
+  // Удаление своего товара (DELETE /api/products/{id})
+  async deleteProduct(id: string): Promise<boolean> {
+    const token = await AuthService.getToken();
+    const res = await fetch(`${API_BASE_URL}/products/${id}`, {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    return res.ok;
   },
 };

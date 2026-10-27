@@ -99,6 +99,7 @@ public class CartController : ControllerBase
             .FirstOrDefaultAsync(c =>
                 c.FamilyId == targetFamilyId.Value &&
                 c.EventId == request.EventId &&
+                !c.IsBought && c.Status != "Purchased" &&
                 ((request.ProductId.HasValue && c.ProductId == request.ProductId) ||
                  c.Title.ToLower() == request.Title.Trim().ToLower())
             );

@@ -110,6 +110,18 @@ public class FamilyController : ControllerBase
         _context.FamilyMembers.Add(newMember);
         await _context.SaveChangesAsync();
 
+        var user = await _context.Users.FindAsync(userId.Value);
+        if (user != null)
+        {
+            newMember.User = user;
+            var memberDto = MapMemberDto(newMember, userId.Value);
+            await _hubContext.Clients.Group(family.Id.ToString()).SendAsync("MemberJoined", new
+            {
+                familyId = family.Id,
+                member = memberDto
+            });
+        }
+
         return Ok(new FamilyResponse
         {
             FamilyId = family.Id,
@@ -210,6 +222,7 @@ public class FamilyController : ControllerBase
 
         await _hubContext.Clients.Group(targetFamilyId.Value.ToString()).SendAsync("CartUpdated", new { familyId = targetFamilyId.Value });
         await _hubContext.Clients.Group(targetFamilyId.Value.ToString()).SendAsync("MemberLeft", new { familyId = targetFamilyId.Value, userId = userId.Value });
+        await _hubContext.Clients.Group(targetFamilyId.Value.ToString()).SendAsync("MemberRemoved", new { familyId = targetFamilyId.Value, userId = userId.Value });
 
         return Ok(new { success = true, message = "Вы вышли из группы" });
     }

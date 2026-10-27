@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { AppText as Text } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Home, Key, LogOut, Clipboard as ClipboardIcon } from 'lucide-react-native';
+import { Home, Key, LogOut, Clipboard as ClipboardIcon, ArrowLeft } from 'lucide-react-native';
 import * as ClipboardExpo from 'expo-clipboard';
 import { useNavigation } from '@react-navigation/native';
 import { useApp } from '../context/AppContext';
@@ -31,7 +31,7 @@ export const OnboardingScreen: React.FC = () => {
   const [pinDigits, setPinDigits] = useState(''); // 6-значный случайный код (буквы и цифры)
   const [isPinFocused, setIsPinFocused] = useState(false);
 
-  const pinInputRef = useRef<TextInput>(null);
+  const pinInputRef = useRef<any>(null);
 
   const showAlert = (title: string, message?: string, onOk?: () => void) => {
     if (Platform.OS === 'web') {
@@ -43,22 +43,22 @@ export const OnboardingScreen: React.FC = () => {
   };
 
   const handleCreateFamily = async () => {
-    const name = familyNameInput.trim() || 'Группа 67';
+    const trimmed = familyNameInput.trim();
+    if (!trimmed) {
+      showAlert('Ошибка', 'Введите название группы');
+      return;
+    }
     let newCode = '';
     try {
-      newCode = await createFamily(name);
+      newCode = await createFamily(trimmed);
     } catch (e: any) {
       showAlert('Ошибка создания группы', e.message || 'Не удалось создать группу');
       return;
     }
 
-    try {
-      await ClipboardExpo.setStringAsync(newCode);
-    } catch {}
-
     showAlert(
       'Группа успешно создана!',
-      `Вы создали группу «${name}».\n\nКод приглашения: ${newCode}\n(код скопирован в буфер обмена)\n\nПоделитесь этим кодом с близкими, чтобы они могли присоединиться!`,
+      `Вы создали группу «${trimmed}».\n\nКод приглашения: ${newCode}\n\nПоделитесь этим кодом с близкими, чтобы они могли присоединиться!`,
       () => navigation.navigate('Main')
     );
   };
@@ -161,6 +161,22 @@ export const OnboardingScreen: React.FC = () => {
           {/* Верхняя строка с именем аккаунта и кнопкой выхода */}
           <View style={styles.topHeader}>
             <View style={{ flex: 1, marginRight: 8 }}>
+              {(navigation.canGoBack() || family != null) && (
+                <TouchableOpacity
+                  style={[styles.backBtnPill, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    if (navigation.canGoBack()) {
+                      navigation.goBack();
+                    } else {
+                      navigation.navigate('Main');
+                    }
+                  }}
+                >
+                  <ArrowLeft size={14} color={colors.textDark} style={{ marginRight: 5 }} />
+                  <Text style={[styles.backBtnPillText, { color: colors.textDark }]}>Назад</Text>
+                </TouchableOpacity>
+              )}
               <Text style={[styles.title, { color: colors.textDark }]}>
                 {t('onboardingTitle')}
               </Text>
@@ -421,6 +437,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 60,
+  },
+  backBtnPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  backBtnPillText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   topHeader: {
     flexDirection: 'row',

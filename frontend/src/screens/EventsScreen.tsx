@@ -21,7 +21,6 @@ import {
   Users,
 } from 'lucide-react-native';
 import { useApp, type AppEvent } from '../context/AppContext';
-import { DEMO_STAGE } from '../config/devConfig';
 
 interface EventsScreenProps {
   onOpenCreateEvent: () => void;
@@ -51,28 +50,6 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
   const [activeTab, setActiveTab] = useState<EventFilterTab>('active');
   const [selectedSpaceFilter, setSelectedSpaceFilter] = useState<string>('all');
 
-  if (DEMO_STAGE === 1) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: colors.textDark }]}>
-            {t('eventsTitle')}
-          </Text>
-        </View>
-        <View style={styles.stage1EmptyContainer}>
-          <View style={[styles.stage1IconCircle, { backgroundColor: colors.primaryLight }]}>
-            <Calendar size={44} color={colors.primary} strokeWidth={2.2} />
-          </View>
-          <Text style={[styles.stage1Title, { color: colors.textDark }]}>
-            Мероприятия
-          </Text>
-          <Text style={[styles.stage1Subtitle, { color: colors.textSecondary }]}>
-            Создание и планирование совместных мероприятий появится на Этапе 2
-          </Text>
-        </View>
-      </View>
-    );
-  }
 
   // Фильтруем мероприятия: показываем только мероприятия групп, к которым текущий пользователь имеет доступ
   const userFamilyIds = families.map((f) => f.id);

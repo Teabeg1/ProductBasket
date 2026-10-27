@@ -27,7 +27,7 @@ import {
   Sparkles,
 } from 'lucide-react-native';
 import { useApp, type FamilyState } from '../context/AppContext';
-import { DEMO_STAGE, type DevUser } from '../config/devConfig';
+import type { DevUser } from '../config/devConfig';
 import { FamilyMembersModal } from '../components/FamilyMembersModal';
 import { FamilySwitcherModal } from '../components/FamilySwitcherModal';
 import { AddProductModal } from '../components/AddProductModal';
@@ -215,7 +215,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <Text style={[styles.accountName, { color: colors.textDark }]} numberOfLines={1}>
                 {currentUser.name}
               </Text>
-              {DEMO_STAGE === 2 && (
+              
                 <TouchableOpacity
                   style={[styles.cardEditBtn, { backgroundColor: colors.cardSecondary }]}
                   activeOpacity={0.7}
@@ -223,7 +223,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 >
                   <Pencil size={14} color={colors.textDark} />
                 </TouchableOpacity>
-              )}
             </View>
             <Text style={[styles.accountEmail, { color: colors.textSecondary }]} numberOfLines={1}>
               {currentUser.email}
@@ -267,7 +266,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </View>
             </TouchableOpacity>
 
-            {DEMO_STAGE === 2 && (
+            
               <TouchableOpacity
                 style={[styles.cardEditBtn, { backgroundColor: colors.cardSecondary }]}
                 activeOpacity={0.7}
@@ -275,7 +274,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               >
                 <Pencil size={14} color={colors.textDark} />
               </TouchableOpacity>
-            )}
           </View>
         ) : (
           <TouchableOpacity
@@ -309,22 +307,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            {/* КНОПКА: "Добавить свой товар" */}
-            <TouchableOpacity
-              style={styles.menuItem}
-              activeOpacity={0.7}
-              onPress={() => setAddProductModalVisible(true)}
-            >
-              <View style={styles.menuItemLeft}>
-                <PackagePlus size={18} color={colors.primary} style={{ marginRight: 12 }} />
-                <Text style={[styles.menuItemText, { color: colors.textDark, fontWeight: '700' }]}>
-                  Добавить свой товар
-                </Text>
-              </View>
-              <ChevronRight size={16} color={colors.textMuted} />
-            </TouchableOpacity>
 
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
             {/* КНОПКА: "Свои товары" (Requirement 3: пункт в меню настроек) */}
             <TouchableOpacity

@@ -18,10 +18,10 @@ import {
   Check,
   Sparkles,
   RefreshCw,
+  Shield,
 } from 'lucide-react-native';
 import { useApp, type CatalogProduct, type FamilyState } from '../context/AppContext';
 import { PRODUCT_IMAGES } from '../constants/productImages';
-import { DEMO_STAGE } from '../config/devConfig';
 import { FamilySwitcherModal } from '../components/FamilySwitcherModal';
 import { FamilyMembersModal } from '../components/FamilyMembersModal';
 
@@ -58,34 +58,18 @@ export const CartScreen: React.FC<CartScreenProps> = ({
     openMainCart,
     family,
     families,
+    currentUser,
+    events,
+    activeCartId,
   } = useApp();
 
   const [switcherVisible, setSwitcherVisible] = useState(false);
   const [membersVisible, setMembersVisible] = useState(false);
   const [selectedFamilyForMembers, setSelectedFamilyForMembers] = useState<FamilyState | null>(null);
 
-  if (DEMO_STAGE === 1) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: colors.textDark }]}>
-            {t('cartTitle')}
-          </Text>
-        </View>
-        <View style={styles.emptyContainer}>
-          <View style={[styles.emptyIconCircle, { backgroundColor: colors.primaryLight }]}>
-            <ShoppingBag size={44} color={colors.primary} strokeWidth={2.2} />
-          </View>
-          <Text style={[styles.emptyTitle, { color: colors.textDark }]}>
-            Корзина пуста
-          </Text>
-          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-            Каталог товаров и совместные покупки появятся на Этапе 2
-          </Text>
-        </View>
-      </View>
-    );
-  }
+
+  const currentEvent = isEventCart ? events?.find((e) => e.id === activeCartId) : null;
+  const isEventCompleted = Boolean(isEventCart && currentEvent?.isCompleted);
 
   // Каталог товаров объединяет базовые товары и пользовательские товары для текущей семьи
   const familyCustomProducts = family?.customProducts || [];
@@ -162,6 +146,32 @@ export const CartScreen: React.FC<CartScreenProps> = ({
         )}
       </View>
 
+      {/* Баннер завершенного мероприятия */}
+      {isEventCompleted && (
+        <View style={[styles.completedBanner, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
+          <Shield size={14} color={colors.textSecondary} style={{ marginRight: 6 }} />
+          <Text style={[styles.completedBannerText, { color: colors.textSecondary }]}>
+            Мероприятие завершено. Корзина доступна только для просмотра.
+          </Text>
+        </View>
+      )}
+
+      {/* Баннер отсутствия группы */}
+      {!family && !isEventCart && (
+        <TouchableOpacity
+          style={[styles.noFamilyBanner, { backgroundColor: colors.card, borderColor: colors.border }]}
+          activeOpacity={0.7}
+          onPress={() => onOpenCreateFamily ? onOpenCreateFamily() : onOpenJoinFamily?.()}
+        >
+          <Text style={[styles.noFamilyText, { color: colors.textDark }]}>
+            Вы пока не состоите в группе
+          </Text>
+          <Text style={[styles.noFamilySubtext, { color: colors.primary }]}>
+            Создать группу или войти по коду ➔
+          </Text>
+        </TouchableOpacity>
+      )}
+
       {/* 2-Column Product Grid */}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -169,9 +179,16 @@ export const CartScreen: React.FC<CartScreenProps> = ({
       >
         <View style={styles.grid}>
           {catalogProducts.map((prod) => {
-            const inCartItem = cartItems[prod.id];
-            const count = inCartItem?.count || 0;
-            const isBought = inCartItem?.isBought || false;
+            const activeCartItem = Object.values(cartItems).find(
+              (it) => !it.isBought && (it.id === prod.id || it.title.toLowerCase() === prod.title.toLowerCase())
+            );
+            const boughtCartItem = Object.values(cartItems).find(
+              (it) => it.isBought && (it.id === prod.id || it.title.toLowerCase() === prod.title.toLowerCase())
+            );
+            const inCartItem = activeCartItem || cartItems[prod.id];
+            const count = activeCartItem ? activeCartItem.count : (inCartItem && !inCartItem.isBought ? inCartItem.count : 0);
+            const isBought = !activeCartItem && Boolean(boughtCartItem);
+            const targetCartId = inCartItem?.id || prod.id;
             const b64 = prod.imageKey ? PRODUCT_IMAGES[prod.imageKey] : null;
             const imageUri = b64 ? `data:image/jpeg;base64,${b64}` : null;
             const isCustom = prod.id.startsWith('custom-');
@@ -196,7 +213,14 @@ export const CartScreen: React.FC<CartScreenProps> = ({
                 {isBought ? (
                   <View style={[styles.boughtBadge, { backgroundColor: colors.success }]}>
                     <Check size={11} color="#FFFFFF" strokeWidth={3} style={{ marginRight: 3 }} />
-                    <Text style={styles.boughtBadgeText}>Куплено</Text>
+                    <Text style={styles.boughtBadgeText} numberOfLines={1}>
+                      {inCartItem?.assignedToUserId === currentUser.id
+                        ? 'Куплено вами'
+                        : (() => {
+                            const buyer = family?.members.find((m) => m.id === inCartItem?.assignedToUserId);
+                            return buyer ? `Купил(а) ${buyer.name}` : 'Куплено';
+                          })()}
+                    </Text>
                   </View>
                 ) : isCustom ? (
                   <View style={[styles.customBadge, { backgroundColor: colors.lime }]}>
@@ -332,6 +356,39 @@ const cardWidth = (screenWidth - 32 - 11) / 2;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  completedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  completedBannerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  noFamilyBanner: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  noFamilyText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  noFamilySubtext: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 3,
   },
   header: {
     paddingHorizontal: 20,

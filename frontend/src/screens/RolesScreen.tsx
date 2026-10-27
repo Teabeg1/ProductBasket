@@ -46,6 +46,8 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
     isEventCart,
     activeCartTitle,
     openMainCart,
+    events,
+    activeCartId,
   } = useApp();
 
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
@@ -53,6 +55,8 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
   const [switcherModalVisible, setSwitcherModalVisible] = useState(false);
   const [selectedFamilyForMembers, setSelectedFamilyForMembers] = useState<FamilyState | null>(null);
 
+  const activeEvent = events.find((e) => e.id.toLowerCase() === activeCartId.toLowerCase());
+  const isEventCompleted = isEventCart && !!activeEvent?.isCompleted;
 
   const itemsList = Object.values(cartItems);
   const totalCount = itemsList.length;
@@ -73,6 +77,10 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
 
   // Нажатие на назначение товара
   const handleAssignPress = (itemId: string) => {
+    if (isEventCompleted) {
+      Alert.alert('Мероприятие завершено', 'Корзина завершенного мероприятия доступна только для чтения.');
+      return;
+    }
     const result = assignCartItem(itemId);
     if (!result.success && result.message) {
       Alert.alert('Товар занят', result.message);
@@ -81,6 +89,10 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
 
   // Нажатие на статус "Куплено"
   const handleTogglePurchased = (itemId: string, itemTitle: string) => {
+    if (isEventCompleted) {
+      Alert.alert('Мероприятие завершено', 'Корзина завершенного мероприятия доступна только для чтения.');
+      return;
+    }
     const result = toggleItemPurchased(itemId);
     if (!result.success && result.message) {
       Alert.alert('Статус «Куплено»', result.message);
@@ -109,10 +121,49 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
         </View>
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      {!family && !isEventCart ? (
+        <View style={styles.emptyCard}>
+          <View style={[styles.emptyIconCircle, { backgroundColor: colors.primaryLight }]}>
+            <ShoppingBag size={32} color={colors.primary} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.textDark }]}>
+            Вы пока не состоите в группе
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+            Чтобы просматривать и распределять товары, создайте группу или присоединитесь по коду.
+          </Text>
+          <TouchableOpacity
+            style={[styles.emptyBtn, { backgroundColor: colors.primary, marginTop: 16 }]}
+            activeOpacity={0.8}
+            onPress={() => (onOpenCreateFamily ? onOpenCreateFamily() : onOpenJoinFamily?.())}
+          >
+            <Text style={styles.emptyBtnText}>Создать группу или войти по коду</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {isEventCompleted && (
+            <View
+              style={{
+                backgroundColor: colors.cardSecondary,
+                borderColor: colors.border,
+                borderWidth: 1,
+                padding: 12,
+                borderRadius: 12,
+                marginBottom: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+              }}
+            >
+              <Lock size={14} color={colors.textSecondary} style={{ marginRight: 6 }} />
+              <Text style={{ color: colors.textSecondary, fontSize: 13, flex: 1 }}>
+                Мероприятие завершено. Распределение доступно только для чтения.
+              </Text>
+            </View>
+          )}
         {/* Инфо-бейдж семьи (КЛИКАБЕЛЕН: открывает список участников по нажатию на название семьи) */}
         <TouchableOpacity
           style={[
@@ -577,6 +628,7 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
           </View>
         )}
       </ScrollView>
+      )}
 
       {/* Модальное окно участников семьи (Requirement 3) */}
       <FamilyMembersModal

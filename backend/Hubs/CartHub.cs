@@ -27,12 +27,12 @@ public class CartHub : Hub
             // Автоматически подключаем пользователя ко всем его семейным группам
             var familyIds = await _context.FamilyMembers
                 .Where(fm => fm.UserId == userId)
-                .Select(fm => fm.FamilyId.ToString())
+                .Select(fm => fm.FamilyId)
                 .ToListAsync();
 
             foreach (var fId in familyIds)
             {
-                await Groups.AddToGroupAsync(Context.ConnectionId, fId);
+                await Groups.AddToGroupAsync(Context.ConnectionId, fId.ToString().ToLowerInvariant());
             }
         }
 
@@ -47,8 +47,9 @@ public class CartHub : Hub
             var isMember = await _context.FamilyMembers.AnyAsync(fm => fm.FamilyId == fGuid && fm.UserId == userId);
             if (isMember)
             {
-                await Groups.AddToGroupAsync(Context.ConnectionId, familyId);
-                _logger.LogInformation("Connection {ConnectionId} joined group {FamilyId}", Context.ConnectionId, familyId);
+                var groupName = fGuid.ToString().ToLowerInvariant();
+                await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
+                _logger.LogInformation("Connection {ConnectionId} joined group {FamilyId}", Context.ConnectionId, groupName);
             }
         }
     }
@@ -57,8 +58,9 @@ public class CartHub : Hub
     {
         if (!string.IsNullOrEmpty(familyId))
         {
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, familyId);
-            _logger.LogInformation("Connection {ConnectionId} left group {FamilyId}", Context.ConnectionId, familyId);
+            var groupName = Guid.TryParse(familyId, out var fGuid) ? fGuid.ToString().ToLowerInvariant() : familyId.ToLowerInvariant();
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName);
+            _logger.LogInformation("Connection {ConnectionId} left group {FamilyId}", Context.ConnectionId, groupName);
         }
     }
 
@@ -74,6 +76,15 @@ public class CartHub : Hub
         if (!await IsMemberAsync(userId, item.FamilyId))
         {
             throw new HubException("Вы не состоите в группе этого товара");
+        }
+
+        if (item.EventId.HasValue)
+        {
+            var ev = await _context.Events.FindAsync(item.EventId.Value);
+            if (ev != null && ev.IsCompleted)
+            {
+                throw new HubException("Мероприятие завершено. Редактирование корзины невозможно.");
+            }
         }
 
         var user = await _context.Users.FindAsync(userId);
@@ -115,6 +126,15 @@ public class CartHub : Hub
             throw new HubException("Вы не состоите в группе этого товара");
         }
 
+        if (item.EventId.HasValue)
+        {
+            var ev = await _context.Events.FindAsync(item.EventId.Value);
+            if (ev != null && ev.IsCompleted)
+            {
+                throw new HubException("Мероприятие завершено. Редактирование корзины невозможно.");
+            }
+        }
+
         var user = await _context.Users.FindAsync(userId);
         if (user == null) throw new HubException("Пользователь не найден");
 
@@ -144,6 +164,15 @@ public class CartHub : Hub
             throw new HubException("Вы не состоите в группе этого товара");
         }
 
+        if (item.EventId.HasValue)
+        {
+            var ev = await _context.Events.FindAsync(item.EventId.Value);
+            if (ev != null && ev.IsCompleted)
+            {
+                throw new HubException("Мероприятие завершено. Редактирование корзины невозможно.");
+            }
+        }
+
         if (item.TakenByUserId == userId)
         {
             item.TakenByUserId = null;
@@ -165,6 +194,15 @@ public class CartHub : Hub
         if (!await IsMemberAsync(userId, item.FamilyId))
         {
             throw new HubException("Вы не состоите в группе этого товара");
+        }
+
+        if (item.EventId.HasValue)
+        {
+            var ev = await _context.Events.FindAsync(item.EventId.Value);
+            if (ev != null && ev.IsCompleted)
+            {
+                throw new HubException("Мероприятие завершено. Редактирование корзины невозможно.");
+            }
         }
 
         if (item.TakenByUserId != userId)
@@ -205,13 +243,14 @@ public class CartHub : Hub
 
     private async Task BroadcastStatusAsync(CartItem item, string? takenByName)
     {
-        await Clients.Group(item.FamilyId.ToString()).SendAsync("ProductStatusChanged", new
+        var fStr = item.FamilyId.ToString().ToLowerInvariant();
+        await Clients.Group(fStr).SendAsync("ProductStatusChanged", new
         {
-            cartItemId = item.Id,
-            productId = item.ProductId,
+            cartItemId = item.Id.ToString().ToLowerInvariant(),
+            productId = item.ProductId?.ToString().ToLowerInvariant(),
             status = item.Status,
-            takenByUserId = item.TakenByUserId,
-            assignedToUserId = item.TakenByUserId,
+            takenByUserId = item.TakenByUserId?.ToString().ToLowerInvariant(),
+            assignedToUserId = item.TakenByUserId?.ToString().ToLowerInvariant(),
             takenByName = takenByName ?? item.TakenByUser?.DisplayName,
             isBought = item.IsBought
         });

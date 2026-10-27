@@ -88,7 +88,7 @@ public class EventsController : ControllerBase
             EventDate = request.EventDate.Trim(),
             Icon = string.IsNullOrWhiteSpace(request.Icon) ? "🎉" : request.Icon.Trim(),
             BadgeBg = "#FFF0F4",
-            HasCart = false,
+            HasCart = request.HasCart ?? false,
             IsCompleted = false,
             CreatedByUserId = userId.Value,
             CreatedAt = DateTime.UtcNow
@@ -99,10 +99,11 @@ public class EventsController : ControllerBase
 
         var familyMembersCount = await _context.FamilyMembers.CountAsync(fm => fm.FamilyId == targetFamilyId.Value);
 
-        await _hubContext.Clients.Group(targetFamilyId.Value.ToString()).SendAsync("EventCreated", new
+        var fStr = targetFamilyId.Value.ToString().ToLowerInvariant();
+        await _hubContext.Clients.Group(fStr).SendAsync("EventCreated", new
         {
-            eventId = newEvent.Id,
-            familyId = targetFamilyId.Value,
+            eventId = newEvent.Id.ToString().ToLowerInvariant(),
+            familyId = fStr,
             title = newEvent.Title
         });
 
@@ -129,10 +130,11 @@ public class EventsController : ControllerBase
         ev.HasCart = true;
         await _context.SaveChangesAsync();
 
-        await _hubContext.Clients.Group(ev.FamilyId.ToString()).SendAsync("EventCartCreated", new
+        var fStr = ev.FamilyId.ToString().ToLowerInvariant();
+        await _hubContext.Clients.Group(fStr).SendAsync("EventCartCreated", new
         {
-            eventId = ev.Id,
-            familyId = ev.FamilyId
+            eventId = ev.Id.ToString().ToLowerInvariant(),
+            familyId = fStr
         });
 
         return Ok(new { success = true, hasCart = true });
@@ -167,10 +169,11 @@ public class EventsController : ControllerBase
         ev.CompletedAt = dateStr;
         await _context.SaveChangesAsync();
 
-        await _hubContext.Clients.Group(ev.FamilyId.ToString()).SendAsync("EventCompleted", new
+        var fStr = ev.FamilyId.ToString().ToLowerInvariant();
+        await _hubContext.Clients.Group(fStr).SendAsync("EventCompleted", new
         {
-            eventId = ev.Id,
-            familyId = ev.FamilyId,
+            eventId = ev.Id.ToString().ToLowerInvariant(),
+            familyId = fStr,
             completedAt = dateStr
         });
 
@@ -198,10 +201,11 @@ public class EventsController : ControllerBase
         ev.CompletedAt = null;
         await _context.SaveChangesAsync();
 
-        await _hubContext.Clients.Group(ev.FamilyId.ToString()).SendAsync("EventReopened", new
+        var fStr = ev.FamilyId.ToString().ToLowerInvariant();
+        await _hubContext.Clients.Group(fStr).SendAsync("EventReopened", new
         {
-            eventId = ev.Id,
-            familyId = ev.FamilyId
+            eventId = ev.Id.ToString().ToLowerInvariant(),
+            familyId = fStr
         });
 
         return Ok(new { success = true, isCompleted = false });
@@ -228,16 +232,19 @@ public class EventsController : ControllerBase
         _context.Events.Remove(ev);
         await _context.SaveChangesAsync();
 
-        await _hubContext.Clients.Group(familyId.ToString()).SendAsync("EventDeleted", new
+        var fStr = familyId.ToString().ToLowerInvariant();
+        var eStr = id.ToString().ToLowerInvariant();
+
+        await _hubContext.Clients.Group(fStr).SendAsync("EventDeleted", new
         {
-            eventId = id,
-            familyId = familyId
+            eventId = eStr,
+            familyId = fStr
         });
 
-        await _hubContext.Clients.Group(familyId.ToString()).SendAsync("CartUpdated", new
+        await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new
         {
-            familyId = familyId,
-            eventId = id
+            familyId = fStr,
+            eventId = eStr
         });
 
         return Ok(new { success = true });
@@ -284,7 +291,7 @@ public class EventsController : ControllerBase
             EventDate = e.EventDate,
             Icon = e.Icon,
             BadgeBg = e.BadgeBg,
-            HasCart = e.HasCart,
+            HasCart = e.HasCart || (e.CartItems != null && e.CartItems.Count > 0),
             IsCompleted = e.IsCompleted,
             CompletedAt = e.CompletedAt,
             MembersCount = overrideMembersCount ?? e.Family?.Members?.Count ?? 1,

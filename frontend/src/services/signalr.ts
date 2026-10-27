@@ -62,6 +62,18 @@ export interface EventCartCreatedPayload {
   familyId: string;
 }
 
+export interface CustomProductCreatedPayload {
+  familyId: string;
+  productId: string;
+  title: string;
+  product?: any;
+}
+
+export interface CustomProductDeletedPayload {
+  familyId: string;
+  productId: string;
+}
+
 type ProductStatusCallback = (data: ProductStatusChangedPayload) => void;
 type CartUpdatedCallback = (data: CartUpdatedPayload) => void;
 type FamilyUpdatedCallback = (data: FamilyUpdatedPayload) => void;
@@ -72,6 +84,8 @@ type EventCreatedCallback = (data: EventCreatedPayload) => void;
 type EventDeletedCallback = (data: EventDeletedPayload) => void;
 type EventCompletedCallback = (data: EventCompletedPayload) => void;
 type EventCartCreatedCallback = (data: EventCartCreatedPayload) => void;
+type CustomProductCreatedCallback = (data: CustomProductCreatedPayload) => void;
+type CustomProductDeletedCallback = (data: CustomProductDeletedPayload) => void;
 
 class SignalRManager {
   private connection: signalR.HubConnection | null = null;
@@ -85,6 +99,8 @@ class SignalRManager {
   private eventDeletedListeners: Set<EventDeletedCallback> = new Set();
   private eventCompletedListeners: Set<EventCompletedCallback> = new Set();
   private eventCartCreatedListeners: Set<EventCartCreatedCallback> = new Set();
+  private customProductCreatedListeners: Set<CustomProductCreatedCallback> = new Set();
+  private customProductDeletedListeners: Set<CustomProductDeletedCallback> = new Set();
   private isConnecting = false;
 
   async start(): Promise<signalR.HubConnection | null> {
@@ -201,6 +217,18 @@ class SignalRManager {
         });
       });
 
+      this.connection.on('CustomProductCreated', (data: CustomProductCreatedPayload) => {
+        this.customProductCreatedListeners.forEach((cb) => {
+          try { cb(data); } catch (e) { console.warn('Error in customProductCreatedListener', e); }
+        });
+      });
+
+      this.connection.on('CustomProductDeleted', (data: CustomProductDeletedPayload) => {
+        this.customProductDeletedListeners.forEach((cb) => {
+          try { cb(data); } catch (e) { console.warn('Error in customProductDeletedListener', e); }
+        });
+      });
+
       await this.connection.start();
       console.log('[SignalR] Connected successfully to CartHub');
       return this.connection;
@@ -299,6 +327,20 @@ class SignalRManager {
     this.eventCartCreatedListeners.add(cb);
     return () => {
       this.eventCartCreatedListeners.delete(cb);
+    };
+  }
+
+  onCustomProductCreated(cb: CustomProductCreatedCallback): () => void {
+    this.customProductCreatedListeners.add(cb);
+    return () => {
+      this.customProductCreatedListeners.delete(cb);
+    };
+  }
+
+  onCustomProductDeleted(cb: CustomProductDeletedCallback): () => void {
+    this.customProductDeletedListeners.add(cb);
+    return () => {
+      this.customProductDeletedListeners.delete(cb);
     };
   }
 

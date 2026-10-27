@@ -336,4 +336,129 @@ public class CartTests : IClassFixture<CustomWebApplicationFactory>
         var list = await listRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
         Assert.Empty(list!);
     }
+
+    [Fact]
+    public async Task AddingItem_WhenItemIsBought_CreatesNewItemInsteadOfUpdatingBoughtItem()
+    {
+        var (clientA, clientB, familyId) = await SetupFamilyWithTwoUsersAsync();
+
+        // 1. Alice добавляет 8 яблок
+        var addRes1 = await clientA.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Яблоки сезонные",
+            Unit = "1 кг",
+            Count = 8
+        });
+        Assert.Equal(HttpStatusCode.Created, addRes1.StatusCode);
+        var item1 = await addRes1.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(item1);
+        Assert.Equal(8, item1.Count);
+
+        // 2. Alice берет и отмечает «Куплено»
+        await clientA.PostAsync($"/api/cart/{item1.Id}/take", null);
+        var boughtRes = await clientA.PostAsync($"/api/cart/{item1.Id}/toggle-purchased", null);
+        Assert.Equal(HttpStatusCode.OK, boughtRes.StatusCode);
+        var boughtItem = (await boughtRes.Content.ReadFromJsonAsync<CartActionResponse>())?.Item;
+        Assert.NotNull(boughtItem);
+        Assert.True(boughtItem.IsBought);
+        Assert.Equal(8, boughtItem.Count);
+
+        // 3. Bob добавляет такие же яблоки (1 шт)
+        var addRes2 = await clientB.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Яблоки сезонные",
+            Unit = "1 кг",
+            Count = 1
+        });
+        Assert.Equal(HttpStatusCode.Created, addRes2.StatusCode);
+        var item2 = await addRes2.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(item2);
+        Assert.NotEqual(item1.Id, item2.Id); // Должен быть создан отдельный пункт!
+        Assert.Equal(1, item2.Count);
+        Assert.False(item2.IsBought);
+
+        // 4. Проверяем, что в корзине 2 отдельных пункта
+        var listRes = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var allItems = await listRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.NotNull(allItems);
+        Assert.Equal(2, allItems.Count);
+
+        var boughtCheck = allItems.First(i => i.Id == item1.Id);
+        Assert.Equal(8, boughtCheck.Count);
+        Assert.True(boughtCheck.IsBought);
+
+        var unboughtCheck = allItems.First(i => i.Id == item2.Id);
+        Assert.Equal(1, unboughtCheck.Count);
+        Assert.False(unboughtCheck.IsBought);
+    }
+
+    [Fact]
+    public async Task CompletedEvent_BlocksAddingAndUpdatingItems()
+    {
+        var (client, _, familyId) = await SetupFamilyWithTwoUsersAsync();
+
+        // 1. Создаем мероприятие
+        var evRes = await client.PostAsJsonAsync("/api/events", new CreateEventRequest
+        {
+            FamilyId = familyId,
+            Title = "Пикник",
+            EventDate = "15 июня",
+            HasCart = true
+        });
+        var ev = await evRes.Content.ReadFromJsonAsync<EventDto>();
+        Assert.NotNull(ev);
+
+        // 2. Добавляем товар в мероприятие до завершения
+        var addRes = await client.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            EventId = ev.Id,
+            Title = "Сок апельсиновый",
+            Unit = "1 л",
+            Count = 2
+        });
+        Assert.Equal(HttpStatusCode.Created, addRes.StatusCode);
+        var item = await addRes.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(item);
+
+        // 3. Завершаем мероприятие
+        var compRes = await client.PostAsync($"/api/events/{ev.Id}/complete", null);
+        Assert.Equal(HttpStatusCode.OK, compRes.StatusCode);
+
+        // 4. Попытка добавить товар в завершенное мероприятие должна вернуть 400 BadRequest
+        var addBlocked = await client.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            EventId = ev.Id,
+            Title = "Печенье",
+            Count = 1
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, addBlocked.StatusCode);
+
+        // 5. Попытка изменить товар должна вернуть 400 BadRequest
+        var updateBlocked = await client.PutAsJsonAsync($"/api/cart/items/{item.Id}", new UpdateCartItemRequest { Count = 5 });
+        Assert.Equal(HttpStatusCode.BadRequest, updateBlocked.StatusCode);
+
+        // 6. Попытка уменьшить товар должна вернуть 400 BadRequest
+        var decBlocked = await client.PostAsync($"/api/cart/items/{item.Id}/decrement", null);
+        Assert.Equal(HttpStatusCode.BadRequest, decBlocked.StatusCode);
+
+        // 7. Попытка удалить товар должна вернуть 400 BadRequest
+        var delBlocked = await client.DeleteAsync($"/api/cart/items/{item.Id}");
+        Assert.Equal(HttpStatusCode.BadRequest, delBlocked.StatusCode);
+
+        // 8. Попытка назначить товар в завершенном мероприятии должна вернуть 400 BadRequest
+        var assignBlocked = await client.PostAsync($"/api/cart/{item.Id}/assign", null);
+        Assert.Equal(HttpStatusCode.BadRequest, assignBlocked.StatusCode);
+
+        // 9. Попытка взять товар должна вернуть 400 BadRequest
+        var takeBlocked = await client.PostAsync($"/api/cart/{item.Id}/take", null);
+        Assert.Equal(HttpStatusCode.BadRequest, takeBlocked.StatusCode);
+
+        // 10. Попытка отметить купленным должна вернуть 400 BadRequest
+        var toggleBlocked = await client.PostAsync($"/api/cart/{item.Id}/toggle-purchased", null);
+        Assert.Equal(HttpStatusCode.BadRequest, toggleBlocked.StatusCode);
+    }
 }

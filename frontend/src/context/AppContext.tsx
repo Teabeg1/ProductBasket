@@ -108,7 +108,7 @@ interface AppContextType {
 
   // Events State
   events: AppEvent[];
-  createEvent: (data: { title: string; date: string; emoji: string; familyId?: string }) => void;
+  createEvent: (data: { title: string; date: string; emoji: string; familyId?: string; hasCart?: boolean }) => void;
   deleteEvent: (id: string) => void;
   createEventCart: (id: string) => void;
   getEventCartStats: (eventId: string) => { total: number; assigned: number; bought: number };
@@ -207,7 +207,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [events, setEvents] = useState<AppEvent[]>([]);
 
 
-  // Подключение к SignalR и синхронизация в реальном времени (корзина, статусы, семья, участники, мероприятия)
+  const activeFamilyIdRef = React.useRef(activeFamilyId);
+  activeFamilyIdRef.current = activeFamilyId;
+  const currentUserIdRef = React.useRef(currentUser.id);
+  currentUserIdRef.current = currentUser.id;
+
+  // Подключение к SignalR и синхронизация в реальном времени (корзина, статусы, семья, участники, мероприятия, свои товары)
   useEffect(() => {
     if (!currentUser.id || !activeFamilyId) return;
 
@@ -221,6 +226,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let unsubEventCompleted: (() => void) | undefined;
     let unsubMemberUpdated: (() => void) | undefined;
     let unsubEventCartCreated: (() => void) | undefined;
+    let unsubCustomProductCreated: (() => void) | undefined;
+    let unsubCustomProductDeleted: (() => void) | undefined;
 
     const setupSignalR = async () => {
       await SignalRService.start();
@@ -274,48 +281,77 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         console.warn('Failed to load events from cloud:', e);
       }
 
-      // 3. Подписка на изменение статусов товаров (кто взял товар / статус «Куплено»)
+      // 3. Загрузка пользовательских товаров для активной группы (Bug 9)
+      try {
+        const prods = await ProductsService.getProducts(activeFamilyId);
+        const customs = prods.filter((p: any) => p.familyId != null || (p.category && p.category.includes('Свои')));
+        const mappedCustoms: CatalogProduct[] = customs.map((cp: any) => ({
+          id: String(cp.id),
+          title: cp.title,
+          unit: cp.unit || '1 шт',
+          emoji: cp.emoji || '🛍️',
+          imageKey: cp.imageKey || '',
+        }));
+        setFamilies((prev) =>
+          prev.map((f) =>
+            f.id.toLowerCase() === activeFamilyId.toLowerCase()
+              ? { ...f, customProducts: mappedCustoms }
+              : f
+          )
+        );
+      } catch (e) {
+        console.warn('Failed to load custom products in setupSignalR:', e);
+      }
+
+      // 4. Подписка на изменение статусов товаров (кто взял товар / статус «Куплено»)
       unsubStatus = SignalRService.onProductStatusChanged((data) => {
-        const targetId = data.cartItemId || data.productId;
+        const targetId = (data.cartItemId || data.productId || '').toLowerCase();
         setCarts((prev) => {
-          const currentFamCart = { ...(prev[activeFamilyId] || {}) };
-          const key = Object.keys(currentFamCart).find((k) => currentFamCart[k].id === targetId || k === targetId);
-          if (key) {
-            currentFamCart[key] = {
-              ...currentFamCart[key],
-              assignedToUserId: data.assignedToUserId || data.takenByUserId || null,
-              isBought: data.isBought,
-            };
-            return {
-              ...prev,
-              [activeFamilyId]: currentFamCart,
-            };
+          const updated = { ...prev };
+          for (const cKey of Object.keys(updated)) {
+            const currentFamCart = { ...(updated[cKey] || {}) };
+            const matchedKey = Object.keys(currentFamCart).find(
+              (k) => k.toLowerCase() === targetId || currentFamCart[k].id.toLowerCase() === targetId
+            );
+            if (matchedKey) {
+              currentFamCart[matchedKey] = {
+                ...currentFamCart[matchedKey],
+                assignedToUserId: data.assignedToUserId ? data.assignedToUserId.toLowerCase() : (data.takenByUserId ? data.takenByUserId.toLowerCase() : null),
+                isBought: data.isBought,
+              };
+              updated[cKey] = currentFamCart;
+            }
           }
-          return prev;
+          return updated;
         });
       });
 
-      // 4. Подписка на обновление состава корзины (добавление, удаление, изменение количества)
+      // 5. Подписка на обновление состава корзины (добавление, удаление, изменение количества, корзины мероприятий)
       unsubCart = SignalRService.onCartUpdated(async (data) => {
-        if (data.familyId === activeFamilyId) {
+        const targetFamilyId = data.familyId || activeFamilyId;
+        const currentActiveFamId = activeFamilyIdRef.current;
+        if (targetFamilyId && targetFamilyId.toLowerCase() === currentActiveFamId?.toLowerCase()) {
           try {
-            const freshItems = await CartService.getCart(activeFamilyId);
+            const eventId = data.eventId;
+            const freshItems = await CartService.getCart(targetFamilyId, eventId);
             const mapped: Record<string, CartItem> = {};
             freshItems.forEach((c) => {
-              mapped[c.id] = {
-                id: c.id,
+              const lowerId = c.id.toLowerCase();
+              mapped[lowerId] = {
+                id: lowerId,
                 title: c.title,
                 unit: c.unit,
                 imageKey: c.imageKey || '',
                 emoji: c.emoji || '📦',
                 count: c.count,
-                assignedToUserId: c.assignedToUserId || c.takenByUserId || null,
+                assignedToUserId: c.assignedToUserId ? c.assignedToUserId.toLowerCase() : (c.takenByUserId ? c.takenByUserId.toLowerCase() : null),
                 isBought: c.isBought,
               };
             });
+            const storageKey = (eventId || targetFamilyId).toLowerCase();
             setCarts((prev) => ({
               ...prev,
-              [activeFamilyId]: mapped,
+              [storageKey]: mapped,
             }));
           } catch (err) {
             console.warn('Failed to refresh cart on SignalR CartUpdated:', err);
@@ -323,22 +359,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
       });
 
-      // 5. Подписка на переименование группы (Bug 2)
+      // 6. Подписка на переименование группы (Bug 2)
       unsubFamily = SignalRService.onFamilyUpdated((data) => {
         setFamilies((prev) =>
-          prev.map((f) => (f.id === data.familyId ? { ...f, name: data.name } : f))
+          prev.map((f) => (f.id.toLowerCase() === data.familyId.toLowerCase() ? { ...f, name: data.name } : f))
         );
-        setKnownFamilies((prev) =>
-          prev[data.familyId]
-            ? { ...prev, [data.familyId]: { ...prev[data.familyId], name: data.name } }
-            : prev
-        );
-        if (activeFamilyId === data.familyId) {
+        setKnownFamilies((prev) => {
+          const matchedKey = Object.keys(prev).find((k) => k.toLowerCase() === data.familyId.toLowerCase());
+          return matchedKey
+            ? { ...prev, [matchedKey]: { ...prev[matchedKey], name: data.name } }
+            : prev;
+        });
+        if (activeFamilyIdRef.current?.toLowerCase() === data.familyId.toLowerCase()) {
           setCurrentUser((prev) => ({ ...prev, familyName: data.name }));
         }
       });
 
-      // 6. Подписка на вступление нового участника (Bug 3)
+      // 7. Подписка на вступление нового участника (Bug 6)
       unsubMemberJoined = SignalRService.onMemberJoined((data) => {
         if (!data?.member) return;
         const newMember: DevUser = {
@@ -354,42 +391,68 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         setFamilies((prev) =>
           prev.map((f) => {
-            if (f.id !== data.familyId) return f;
-            if (f.members.some((m) => m.id === newMember.id)) return f;
+            if (f.id.toLowerCase() !== data.familyId?.toLowerCase()) return f;
+            if (f.members.some((m) => m.id.toLowerCase() === newMember.id.toLowerCase())) return f;
             return { ...f, members: [...f.members, newMember] };
           })
         );
 
         setKnownFamilies((prev) => {
-          const target = prev[data.familyId];
+          const matchedKey = Object.keys(prev).find((k) => k.toLowerCase() === data.familyId?.toLowerCase()) || data.familyId;
+          const target = prev[matchedKey];
           if (!target) return prev;
-          if (target.members.some((m) => m.id === newMember.id)) return prev;
+          if (target.members.some((m) => m.id.toLowerCase() === newMember.id.toLowerCase())) return prev;
           return {
             ...prev,
-            [data.familyId]: {
+            [matchedKey]: {
               ...target,
               members: [...target.members, newMember],
             },
           };
         });
+
+        // Синхронизация списка участников с бэкенда
+        FamilyService.getMembers(data.familyId)
+          .then((cloudMembers) => {
+            if (Array.isArray(cloudMembers) && cloudMembers.length > 0) {
+              const mapped = cloudMembers.map((m: any) => ({
+                id: String(m.id),
+                name: m.displayName || m.name || 'Участник',
+                email: m.email,
+                avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
+                avatarBg: m.avatarBg || '#E0E7FF',
+                avatarColor: m.avatarColor || '#3730A3',
+                familyId: data.familyId,
+                familyName: '',
+              }));
+              setFamilies((prev) =>
+                prev.map((f) =>
+                  f.id.toLowerCase() === data.familyId?.toLowerCase() ? { ...f, members: mapped } : f
+                )
+              );
+            }
+          })
+          .catch(() => {});
       });
 
-      // 7. Подписка на удаление участника или выход из группы (Bug 5, Bug 7, Bug 8, Bug 11, Bug 12)
+      // 8. Подписка на удаление участника или выход из группы (Bug 5, Bug 7, Bug 8, Bug 11, Bug 12)
       unsubMemberRemoved = SignalRService.onMemberRemoved((data) => {
-        if (data.userId === currentUser.id) {
+        const isSelf = data.userId?.toLowerCase() === currentUserIdRef.current?.toLowerCase();
+        if (isSelf) {
           // Текущего пользователя удалили или он вышел
           setFamilies((prev) => {
-            const remaining = prev.filter((f) => f.id !== data.familyId);
-            if (activeFamilyId === data.familyId) {
+            const remaining = prev.filter((f) => f.id.toLowerCase() !== data.familyId?.toLowerCase());
+            if (activeFamilyIdRef.current?.toLowerCase() === data.familyId?.toLowerCase()) {
               if (remaining.length > 0) {
                 const next = remaining[0];
                 setActiveFamilyId(next.id);
                 setCurrentUser((u) => ({ ...u, familyId: next.id, familyName: next.name }));
                 setActiveCartId(next.id);
                 Storage.setItem('@product_basket_last_active_family', next.id).catch(() => {});
+                SignalRService.joinFamily(next.id).catch(() => {});
                 Alert.alert('Группа', `Вы вышли из группы (или были исключены). Переключено на группу «${next.name}».`);
               } else {
-                setActiveFamilyId('');
+                setActiveFamilyId(null);
                 setCurrentUser((u) => ({ ...u, familyId: null, familyName: null }));
                 setActiveCartId('main');
                 Storage.removeItem('@product_basket_last_active_family').catch(() => {});
@@ -400,40 +463,43 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           });
           setKnownFamilies((prev) => {
             const copy = { ...prev };
-            delete copy[data.familyId];
+            const matchedKey = Object.keys(copy).find((k) => k.toLowerCase() === data.familyId?.toLowerCase());
+            if (matchedKey) delete copy[matchedKey];
             return copy;
           });
           return;
         }
 
-        // Другого участника удалили из группы:
+        // Другого участника удалили из группы или он вышел
         setFamilies((prev) =>
           prev.map((f) => {
-            if (f.id !== data.familyId) return f;
+            if (f.id.toLowerCase() !== data.familyId?.toLowerCase()) return f;
             return {
               ...f,
-              members: f.members.filter((m) => m.id !== data.userId),
+              members: f.members.filter((m) => m.id.toLowerCase() !== data.userId?.toLowerCase()),
             };
           })
         );
         setKnownFamilies((prev) => {
-          const target = prev[data.familyId];
-          if (!target) return prev;
+          const matchedKey = Object.keys(prev).find((k) => k.toLowerCase() === data.familyId?.toLowerCase());
+          if (!matchedKey) return prev;
+          const target = prev[matchedKey];
           return {
             ...prev,
-            [data.familyId]: {
+            [matchedKey]: {
               ...target,
-              members: target.members.filter((m) => m.id !== data.userId),
+              members: target.members.filter((m) => m.id.toLowerCase() !== data.userId?.toLowerCase()),
             },
           };
         });
 
         // Снимаем товары, закрепленные за удаленным участником
         setCarts((prev) => {
-          const currentFamCart = { ...(prev[data.familyId] || {}) };
+          const matchedFamKey = Object.keys(prev).find((k) => k.toLowerCase() === data.familyId?.toLowerCase()) || data.familyId;
+          const currentFamCart = { ...(prev[matchedFamKey] || {}) };
           let modified = false;
           Object.keys(currentFamCart).forEach((k) => {
-            if (currentFamCart[k].assignedToUserId === data.userId) {
+            if (currentFamCart[k].assignedToUserId?.toLowerCase() === data.userId?.toLowerCase()) {
               currentFamCart[k] = {
                 ...currentFamCart[k],
                 assignedToUserId: null,
@@ -443,43 +509,68 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }
           });
           if (modified) {
-            return { ...prev, [data.familyId]: currentFamCart };
+            return { ...prev, [matchedFamKey]: currentFamCart };
           }
           return prev;
         });
+
+        // Синхронизация актуальных участников с бэкенда
+        FamilyService.getMembers(data.familyId)
+          .then((cloudMembers) => {
+            if (Array.isArray(cloudMembers) && cloudMembers.length > 0) {
+              const mapped = cloudMembers.map((m: any) => ({
+                id: String(m.id),
+                name: m.displayName || m.name || 'Участник',
+                email: m.email,
+                avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
+                avatarBg: m.avatarBg || '#E0E7FF',
+                avatarColor: m.avatarColor || '#3730A3',
+                familyId: data.familyId,
+                familyName: '',
+              }));
+              setFamilies((prev) =>
+                prev.map((f) =>
+                  f.id.toLowerCase() === data.familyId?.toLowerCase() ? { ...f, members: mapped } : f
+                )
+              );
+            }
+          })
+          .catch(() => {});
       });
 
-      // Подписка на обновление имени участника (Bug 7)
+      // 9. Подписка на обновление имени участника (Bug 7)
       unsubMemberUpdated = SignalRService.onMemberUpdated((data) => {
         if (!data?.userId) return;
+        const uId = data.userId.toLowerCase();
+        const firstChar = (data.displayName || 'У')[0].toUpperCase();
         setFamilies((prev) =>
           prev.map((f) => {
-            if (f.id !== data.familyId) return f;
+            if (f.id.toLowerCase() !== data.familyId?.toLowerCase()) return f;
             return {
               ...f,
               members: f.members.map((m) =>
-                m.id === data.userId ? { ...m, name: data.displayName } : m
+                m.id.toLowerCase() === uId ? { ...m, name: data.displayName, avatarChar: firstChar } : m
               ),
             };
           })
         );
-        if (data.userId === currentUser.id) {
-          setCurrentUser((u) => ({ ...u, name: data.displayName }));
+        if (uId === currentUserIdRef.current?.toLowerCase()) {
+          setCurrentUser((u) => ({ ...u, name: data.displayName, avatarChar: firstChar }));
         }
       });
 
-      // Подписка на создание корзины мероприятия (Bug 3)
+      // 10. Подписка на создание корзины мероприятия (Bug 3)
       unsubEventCartCreated = SignalRService.onEventCartCreated((data) => {
         setEvents((prev) =>
-          prev.map((e) => (e.id === data.eventId ? { ...e, hasCart: true } : e))
+          prev.map((e) => (e.id.toLowerCase() === data.eventId?.toLowerCase() ? { ...e, hasCart: true } : e))
         );
       });
 
-      // 8. Подписка на создание, удаление и завершение мероприятий (Bug 4)
+      // 11. Подписка на создание, удаление и завершение мероприятий (Bug 4)
       unsubEventCreated = SignalRService.onEventCreated(async (data) => {
-        if (data.familyId === activeFamilyId) {
+        if (data.familyId?.toLowerCase() === activeFamilyIdRef.current?.toLowerCase()) {
           try {
-            const freshEvents = await EventsService.getEvents(activeFamilyId);
+            const freshEvents = await EventsService.getEvents(activeFamilyIdRef.current);
             if (Array.isArray(freshEvents)) {
               setEvents(
                 freshEvents.map((e) => ({
@@ -502,12 +593,47 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
 
       unsubEventDeleted = SignalRService.onEventDeleted((data) => {
-        setEvents((prev) => prev.filter((e) => e.id !== data.eventId));
+        setEvents((prev) => prev.filter((e) => e.id.toLowerCase() !== data.eventId?.toLowerCase()));
       });
 
       unsubEventCompleted = SignalRService.onEventCompleted((data) => {
         setEvents((prev) =>
-          prev.map((e) => (e.id === data.eventId ? { ...e, isCompleted: true, completedAt: data.completedAt } : e))
+          prev.map((e) => (e.id.toLowerCase() === data.eventId?.toLowerCase() ? { ...e, isCompleted: true, completedAt: data.completedAt } : e))
+        );
+      });
+
+      // 12. Подписка на создание и удаление пользовательских товаров (Bug 9)
+      unsubCustomProductCreated = SignalRService.onCustomProductCreated((data) => {
+        if (!data?.productId) return;
+        const newProduct: CatalogProduct = {
+          id: String(data.productId),
+          title: data.title || data.product?.title || 'Свой товар',
+          unit: data.product?.unit || '1 шт',
+          emoji: data.product?.emoji || '🛍️',
+          imageKey: data.product?.imageKey || '',
+        };
+        setFamilies((prev) =>
+          prev.map((f) => {
+            if (f.id.toLowerCase() !== data.familyId?.toLowerCase()) return f;
+            if (f.customProducts?.some((p) => p.id === newProduct.id)) return f;
+            return {
+              ...f,
+              customProducts: [...(f.customProducts || []), newProduct],
+            };
+          })
+        );
+      });
+
+      unsubCustomProductDeleted = SignalRService.onCustomProductDeleted((data) => {
+        if (!data?.productId) return;
+        setFamilies((prev) =>
+          prev.map((f) => {
+            if (f.id.toLowerCase() !== data.familyId?.toLowerCase()) return f;
+            return {
+              ...f,
+              customProducts: (f.customProducts || []).filter((p) => p.id !== data.productId),
+            };
+          })
         );
       });
     };
@@ -525,6 +651,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (unsubEventCompleted) unsubEventCompleted();
       if (unsubMemberUpdated) unsubMemberUpdated();
       if (unsubEventCartCreated) unsubEventCartCreated();
+      if (unsubCustomProductCreated) unsubCustomProductCreated();
+      if (unsubCustomProductDeleted) unsubCustomProductDeleted();
     };
   }, [currentUser.id, activeFamilyId]);
 
@@ -647,9 +775,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let activeFam = hasFamily ? userFamilies[0] : null;
 
     try {
-      const savedActiveId = await Storage.getItem('@product_basket_last_active_family');
-      if (savedActiveId && userFamilies.some((f) => f.id === savedActiveId)) {
-        activeFam = userFamilies.find((f) => f.id === savedActiveId) || activeFam;
+      const userKey = `@product_basket_last_active_family_${cleanEmail}`;
+      const savedActiveId = (await Storage.getItem(userKey)) || (await Storage.getItem('@product_basket_last_active_family'));
+      if (savedActiveId && userFamilies.some((f) => f.id.toLowerCase() === savedActiveId.toLowerCase())) {
+        activeFam = userFamilies.find((f) => f.id.toLowerCase() === savedActiveId.toLowerCase()) || activeFam;
       }
     } catch {}
 
@@ -692,6 +821,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setActiveFamilyId(activeFam ? activeFam.id : null);
     if (activeFam) {
+      Storage.setItem('@product_basket_last_active_family', activeFam.id).catch(() => {});
+      Storage.setItem(`@product_basket_last_active_family_${cleanEmail}`, activeFam.id).catch(() => {});
       setActiveCartId(activeFam.id);
       setCarts((prev) => ({
         ...prev,
@@ -739,7 +870,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setActiveCartId('main');
   };
 
-  const updateUserName = (name: string) => {
+  const updateUserName = async (name: string): Promise<void> => {
     const trimmed = name.trim();
     if (!trimmed) return;
 
@@ -761,19 +892,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       prev.map((f) => ({
         ...f,
         members: f.members.map((m) =>
-          m.id === currentUser.id ? { ...m, name: trimmed, avatarChar: firstChar } : m
+          m.id.toLowerCase() === currentUser.id.toLowerCase() ? { ...m, name: trimmed, avatarChar: firstChar } : m
         ),
       }))
     );
 
-    AuthService.updateProfile(trimmed).catch((e) =>
-      console.warn('Cloud updateProfile failed:', e)
-    );
+    setKnownFamilies((prev) => {
+      const copy = { ...prev };
+      for (const k of Object.keys(copy)) {
+        copy[k] = {
+          ...copy[k],
+          members: copy[k].members.map((m) =>
+            m.id.toLowerCase() === currentUser.id.toLowerCase() ? { ...m, name: trimmed, avatarChar: firstChar } : m
+          ),
+        };
+      }
+      return copy;
+    });
+
+    try {
+      await AuthService.updateProfile(trimmed);
+    } catch (e) {
+      console.warn('Cloud updateProfile failed:', e);
+    }
   };
 
   // Переключение между семьями пользователя
   const switchFamily = (familyId: string) => {
-    const target = families.find((f) => f.id === familyId);
+    const target = families.find((f) => f.id.toLowerCase() === familyId.toLowerCase());
     if (!target) return;
 
     setActiveFamilyId(target.id);
@@ -784,7 +930,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }));
 
     // Если сейчас открыта корзина семьи (не мероприятие), переключаем на корзину этой семьи
-    const activeEvt = events.find((e) => e.id === activeCartId);
+    const activeEvt = events.find((e) => e.id.toLowerCase() === activeCartId.toLowerCase());
     if (!activeEvt) {
       setActiveCartId(target.id);
       setCarts((prev) => ({
@@ -794,6 +940,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     Storage.setItem('@product_basket_last_active_family', target.id).catch(() => {});
+    if (currentUser.email) {
+      const userKey = `@product_basket_last_active_family_${currentUser.email.trim().toLowerCase()}`;
+      Storage.setItem(userKey, target.id).catch(() => {});
+    }
   };
 
   // Создание новой семьи / группы
@@ -838,6 +988,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       [familyId]: {},
     }));
 
+    Storage.setItem('@product_basket_last_active_family', familyId).catch(() => {});
+    if (currentUser.email) {
+      const userKey = `@product_basket_last_active_family_${currentUser.email.trim().toLowerCase()}`;
+      Storage.setItem(userKey, familyId).catch(() => {});
+    }
     SignalRService.joinFamily(familyId).catch((e) => console.warn('SignalR joinFamily failed:', e));
 
     return newCode;
@@ -890,6 +1045,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         [foundEntry.id]: prev[foundEntry.id] || {},
       }));
 
+      Storage.setItem('@product_basket_last_active_family', foundEntry.id).catch(() => {});
       return true;
     }
 
@@ -944,6 +1100,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setActiveCartId(serverFam.familyId);
         setCarts((prev) => ({ ...prev, [serverFam.familyId]: prev[serverFam.familyId] || {} }));
 
+        Storage.setItem('@product_basket_last_active_family', serverFam.familyId).catch(() => {});
         SignalRService.joinFamily(serverFam.familyId).catch((e) => console.warn('SignalR joinFamily failed:', e));
 
         return true;
@@ -960,11 +1117,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!trimmed || !family) return;
 
     setFamilies((prev) =>
-      prev.map((f) => (f.id === family.id ? { ...f, name: trimmed } : f))
+      prev.map((f) => (f.id.toLowerCase() === family.id.toLowerCase() ? { ...f, name: trimmed } : f))
     );
-    setKnownFamilies((prev) =>
-      prev[family.id] ? { ...prev, [family.id]: { ...prev[family.id], name: trimmed } } : prev
-    );
+    setKnownFamilies((prev) => {
+      const matchedKey = Object.keys(prev).find((k) => k.toLowerCase() === family.id.toLowerCase());
+      return matchedKey ? { ...prev, [matchedKey]: { ...prev[matchedKey], name: trimmed } } : prev;
+    });
     setCurrentUser((prev) => ({
       ...prev,
       familyName: trimmed,
@@ -977,36 +1135,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const leaveFamily = () => {
     if (!family) return;
-    const leaverId = currentUser.id;
-    const targetFamilyId = family.id;
+    const leaverId = currentUser.id.toLowerCase();
+    const targetFamilyId = family.id.toLowerCase();
 
     // Удаляем товары уходящего человека из корзины этой семьи
     setCarts((prevCarts) => {
-      const familyCart = prevCarts[targetFamilyId] || {};
+      const familyCartKey = Object.keys(prevCarts).find((k) => k.toLowerCase() === targetFamilyId) || targetFamilyId;
+      const familyCart = prevCarts[familyCartKey] || {};
       const filteredCart: Record<string, CartItem> = {};
       for (const [itemId, item] of Object.entries(familyCart)) {
-        if (item.assignedToUserId !== leaverId) {
+        if (item.assignedToUserId?.toLowerCase() !== leaverId) {
           filteredCart[itemId] = item;
         }
       }
       return {
         ...prevCarts,
-        [targetFamilyId]: filteredCart,
+        [familyCartKey]: filteredCart,
       };
     });
 
     setKnownFamilies((prev) => {
-      if (!prev[targetFamilyId]) return prev;
+      const matchedKey = Object.keys(prev).find((k) => k.toLowerCase() === targetFamilyId);
+      if (!matchedKey) return prev;
       return {
         ...prev,
-        [targetFamilyId]: {
-          ...prev[targetFamilyId],
-          members: prev[targetFamilyId].members.filter((m) => m.id !== leaverId),
+        [matchedKey]: {
+          ...prev[matchedKey],
+          members: prev[matchedKey].members.filter((m) => m.id.toLowerCase() !== leaverId),
         },
       };
     });
 
-    const remainingFamilies = families.filter((f) => f.id !== targetFamilyId);
+    const remainingFamilies = families.filter((f) => f.id.toLowerCase() !== targetFamilyId);
     setFamilies(remainingFamilies);
 
     if (remainingFamilies.length > 0) {
@@ -1018,6 +1178,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         familyName: nextFamily.name,
       }));
       setActiveCartId(nextFamily.id);
+      Storage.setItem('@product_basket_last_active_family', nextFamily.id).catch(() => {});
+      if (currentUser.email) {
+        Storage.setItem(`@product_basket_last_active_family_${currentUser.email.trim().toLowerCase()}`, nextFamily.id).catch(() => {});
+      }
+      SignalRService.joinFamily(nextFamily.id).catch(() => {});
     } else {
       setActiveFamilyId(null);
       setCurrentUser((prev) => ({
@@ -1026,6 +1191,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         familyName: null,
       }));
       setActiveCartId('main');
+      Storage.removeItem('@product_basket_last_active_family').catch(() => {});
+      if (currentUser.email) {
+        Storage.removeItem(`@product_basket_last_active_family_${currentUser.email.trim().toLowerCase()}`).catch(() => {});
+      }
     }
 
     FamilyService.leaveFamily(targetFamilyId).catch((e) => console.warn('Backend leaveFamily failed:', e));
@@ -1033,48 +1202,51 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const removeMemberFromFamily = (memberId: string) => {
     if (!family) return;
-    const targetFamilyId = family.id;
+    const targetFamilyId = family.id.toLowerCase();
+    const cleanMemberId = memberId.toLowerCase();
 
     // Удаляем товары этого человека из корзины семьи
     setCarts((prevCarts) => {
-      const familyCart = prevCarts[targetFamilyId] || {};
+      const matchedKey = Object.keys(prevCarts).find((k) => k.toLowerCase() === targetFamilyId) || targetFamilyId;
+      const familyCart = prevCarts[matchedKey] || {};
       const filteredCart: Record<string, CartItem> = {};
       for (const [itemId, item] of Object.entries(familyCart)) {
-        if (item.assignedToUserId !== memberId) {
+        if (item.assignedToUserId?.toLowerCase() !== cleanMemberId) {
           filteredCart[itemId] = item;
         }
       }
       return {
         ...prevCarts,
-        [targetFamilyId]: filteredCart,
+        [matchedKey]: filteredCart,
       };
     });
 
     setKnownFamilies((prev) => {
-      if (!prev[targetFamilyId]) return prev;
+      const matchedKey = Object.keys(prev).find((k) => k.toLowerCase() === targetFamilyId);
+      if (!matchedKey || !prev[matchedKey]) return prev;
       return {
         ...prev,
-        [targetFamilyId]: {
-          ...prev[targetFamilyId],
-          members: prev[targetFamilyId].members.filter((m) => m.id !== memberId),
+        [matchedKey]: {
+          ...prev[matchedKey],
+          members: prev[matchedKey].members.filter((m) => m.id.toLowerCase() !== cleanMemberId),
         },
       };
     });
 
     setFamilies((prev) =>
       prev.map((f) => {
-        if (f.id !== targetFamilyId) return f;
+        if (f.id.toLowerCase() !== targetFamilyId) return f;
         return {
           ...f,
-          members: f.members.filter((m) => m.id !== memberId),
+          members: f.members.filter((m) => m.id.toLowerCase() !== cleanMemberId),
         };
       })
     );
 
-    if (currentUser.id === memberId) {
+    if (currentUser.id.toLowerCase() === cleanMemberId) {
       leaveFamily();
     } else {
-      FamilyService.removeMember(memberId, targetFamilyId).catch((e) =>
+      FamilyService.removeMember(memberId, family.id).catch((e) =>
         console.warn('Backend removeMember failed:', e)
       );
     }
@@ -1099,7 +1271,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setFamilies((prev) =>
       prev.map((f) =>
-        f.id === familyId
+        f.id.toLowerCase() === familyId.toLowerCase()
           ? {
               ...f,
               customProducts: [...(f.customProducts || []), newProduct],
@@ -1108,17 +1280,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       )
     );
 
-    setKnownFamilies((prev) =>
-      prev[familyId]
-        ? {
-            ...prev,
-            [familyId]: {
-              ...prev[familyId],
-              customProducts: [...(prev[familyId].customProducts || []), newProduct],
-            },
-          }
-        : prev
-    );
+    setKnownFamilies((prev) => {
+      const matchedKey = Object.keys(prev).find((k) => k.toLowerCase() === familyId.toLowerCase());
+      if (!matchedKey) return prev;
+      return {
+        ...prev,
+        [matchedKey]: {
+          ...prev[matchedKey],
+          customProducts: [...(prev[matchedKey].customProducts || []), newProduct],
+        },
+      };
+    });
 
     try {
       const created = await ProductsService.createCustomProduct({
@@ -1131,7 +1303,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (created?.id) {
         setFamilies((prev) =>
           prev.map((f) =>
-            f.id === familyId
+            f.id.toLowerCase() === familyId.toLowerCase()
               ? {
                   ...f,
                   customProducts: (f.customProducts || []).map((cp) =>
@@ -1152,43 +1324,53 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     ProductsService.deleteProduct(productId).catch((e) => console.warn('Backend deleteProduct failed:', e));
     setFamilies((prev) =>
       prev.map((f) =>
-        f.id === familyId
+        f.id.toLowerCase() === familyId.toLowerCase()
           ? {
               ...f,
-              customProducts: (f.customProducts || []).filter((p) => p.id !== productId),
+              customProducts: (f.customProducts || []).filter((p) => p.id.toLowerCase() !== productId.toLowerCase()),
             }
           : f
       )
     );
 
-    setKnownFamilies((prev) =>
-      prev[familyId]
-        ? {
-            ...prev,
-            [familyId]: {
-              ...prev[familyId],
-              customProducts: (prev[familyId].customProducts || []).filter((p) => p.id !== productId),
-            },
-          }
-        : prev
-    );
+    setKnownFamilies((prev) => {
+      const matchedKey = Object.keys(prev).find((k) => k.toLowerCase() === familyId.toLowerCase());
+      if (!matchedKey) return prev;
+      return {
+        ...prev,
+        [matchedKey]: {
+          ...prev[matchedKey],
+          customProducts: (prev[matchedKey].customProducts || []).filter((p) => p.id.toLowerCase() !== productId.toLowerCase()),
+        },
+      };
+    });
 
     // Также удаляем из корзины этой семьи, если он там был
     setCarts((prev) => {
-      const familyCart = prev[familyId] || {};
-      if (!familyCart[productId]) return prev;
+      const matchedCartKey = Object.keys(prev).find((k) => k.toLowerCase() === familyId.toLowerCase());
+      if (!matchedCartKey) return prev;
+      const familyCart = prev[matchedCartKey] || {};
       const updated = { ...familyCart };
-      delete updated[productId];
+      let changed = false;
+      for (const k of Object.keys(updated)) {
+        if (k.toLowerCase() === productId.toLowerCase() || updated[k].id.toLowerCase() === productId.toLowerCase()) {
+          delete updated[k];
+          changed = true;
+        }
+      }
+      if (!changed) return prev;
       return {
         ...prev,
-        [familyId]: updated,
+        [matchedCartKey]: updated,
       };
     });
   };
 
   // Получить корзину конкретной семьи
   const getFamilyCart = (familyId: string): Record<string, CartItem> => {
-    return carts[familyId] || {};
+    const norm = familyId.toLowerCase();
+    const key = Object.keys(carts).find((k) => k.toLowerCase() === norm) || familyId;
+    return carts[key] || {};
   };
 
   // Управление активной корзиной
@@ -1198,112 +1380,259 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const openEventCart = (eventId: string) => {
-    setActiveCartId(eventId);
+    const normEventId = eventId.toLowerCase();
+    setActiveCartId(normEventId);
     setCarts((prev) => ({
       ...prev,
-      [eventId]: prev[eventId] || {},
+      [normEventId]: prev[normEventId] || prev[eventId] || {},
     }));
+
+    const targetEvt = events.find((e) => e.id.toLowerCase() === normEventId);
+    const targetFamId = targetEvt?.familyId || activeFamilyId;
+    if (targetFamId) {
+      CartService.getCart(targetFamId, normEventId)
+        .then((freshItems) => {
+          if (Array.isArray(freshItems)) {
+            const mapped: Record<string, CartItem> = {};
+            freshItems.forEach((c) => {
+              const lowerId = c.id.toLowerCase();
+              mapped[lowerId] = {
+                id: lowerId,
+                title: c.title,
+                unit: c.unit,
+                imageKey: c.imageKey || '',
+                emoji: c.emoji || '📦',
+                count: c.count,
+                assignedToUserId: c.assignedToUserId ? c.assignedToUserId.toLowerCase() : (c.takenByUserId ? c.takenByUserId.toLowerCase() : null),
+                isBought: c.isBought,
+              };
+            });
+            setCarts((prev) => ({
+              ...prev,
+              [normEventId]: mapped,
+            }));
+          }
+        })
+        .catch(() => {});
+    }
   };
 
-  const currentCartKey = activeCartId;
-  const cartItems = carts[currentCartKey] || {};
+  const currentCartKey = activeCartId.toLowerCase();
+  const matchedCartKey = Object.keys(carts).find((k) => k.toLowerCase() === currentCartKey) || activeCartId;
+  const cartItems = carts[matchedCartKey] || {};
 
-  const activeEvent = events.find((e) => e.id === activeCartId);
+  const activeEvent = events.find((e) => e.id.toLowerCase() === activeCartId.toLowerCase());
   const isEventCart = !!activeEvent;
   const activeCartTitle = activeEvent
     ? `${activeEvent.title} ${activeEvent.emoji}`.trim()
     : 'Корзина';
 
   const addToCart = (item: Omit<CartItem, 'count' | 'assignedToUserId'>) => {
+    if (isEventCart && activeEvent?.isCompleted) {
+      Alert.alert('Мероприятие завершено', 'Нельзя изменять корзину завершенного мероприятия.');
+      return;
+    }
+    if (!activeFamilyId && !isEventCart) {
+      Alert.alert('Группа не выбрана', 'Сначала вступите или создайте группу');
+      return;
+    }
+
+    const currentKey = activeCartId.toLowerCase();
+    const cleanTitle = item.title.trim().toLowerCase();
+
     setCarts((prev) => {
-      const currentCart = prev[activeCartId] || {};
-      const existing = currentCart[item.id];
-      const updatedCart = {
-        ...currentCart,
-        [item.id]: existing
-          ? { ...existing, count: existing.count + 1 }
-          : { ...item, count: 1, assignedToUserId: null, isBought: false },
-      };
+      const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || activeCartId;
+      const currentCart = { ...(prev[cartKey] || {}) };
+
+      // Ищем существующий НЕКУПЛЕННЫЙ товар по ID или названию
+      const existingKey = Object.keys(currentCart).find((k) => {
+        const c = currentCart[k];
+        return (
+          !c.isBought &&
+          (k.toLowerCase() === item.id.toLowerCase() ||
+            c.id.toLowerCase() === item.id.toLowerCase() ||
+            c.title.trim().toLowerCase() === cleanTitle)
+        );
+      });
+
+      if (existingKey) {
+        const existing = currentCart[existingKey];
+        currentCart[existingKey] = { ...existing, count: existing.count + 1 };
+      } else {
+        // Создаем отдельный новый некупленный товар (Bug 14)
+        const newKey = currentCart[item.id] ? `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` : item.id;
+        currentCart[newKey] = {
+          ...item,
+          id: newKey,
+          count: 1,
+          assignedToUserId: null,
+          isBought: false,
+        };
+      }
+
       return {
         ...prev,
-        [activeCartId]: updatedCart,
+        [cartKey]: currentCart,
       };
     });
 
-    if (activeFamilyId) {
+    const targetFamId = (isEventCart && activeEvent?.familyId) ? activeEvent.familyId : activeFamilyId;
+    if (targetFamId) {
       CartService.addItem({
         title: item.title,
         unit: item.unit,
         imageKey: item.imageKey,
         emoji: item.emoji,
         count: 1,
-        familyId: activeFamilyId,
+        familyId: targetFamId,
         eventId: isEventCart ? activeCartId : undefined,
       }).catch((e) => console.warn('Cloud sync addItem failed:', e));
     }
   };
 
   const decrementCartItem = (itemId: string) => {
-    setCarts((prev) => {
-      const currentCart = prev[activeCartId] || {};
-      const existing = currentCart[itemId];
-      if (!existing) return prev;
+    if (isEventCart && activeEvent?.isCompleted) {
+      return;
+    }
+    if (!activeFamilyId && !isEventCart) {
+      return;
+    }
 
-      const updatedCart = { ...currentCart };
-      if (existing.count <= 1) {
-        delete updatedCart[itemId];
-      } else {
-        updatedCart[itemId] = { ...existing, count: existing.count - 1 };
+    const currentKey = activeCartId.toLowerCase();
+    let serverTargetId = itemId;
+
+    setCarts((prev) => {
+      const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || activeCartId;
+      const currentCart = { ...(prev[cartKey] || {}) };
+
+      // Ищем сначала НЕКУПЛЕННЫЙ товар
+      let realKey = Object.keys(currentCart).find((k) => {
+        const c = currentCart[k];
+        return (
+          !c.isBought &&
+          (k.toLowerCase() === itemId.toLowerCase() ||
+            c.id.toLowerCase() === itemId.toLowerCase() ||
+            c.title.trim().toLowerCase() === itemId.trim().toLowerCase())
+        );
+      });
+
+      if (!realKey) {
+        realKey = Object.keys(currentCart).find((k) => {
+          const c = currentCart[k];
+          return (
+            k.toLowerCase() === itemId.toLowerCase() ||
+            c.id.toLowerCase() === itemId.toLowerCase() ||
+            c.title.trim().toLowerCase() === itemId.trim().toLowerCase()
+          );
+        });
       }
+
+      if (!realKey) return prev;
+
+      const existing = currentCart[realKey];
+      serverTargetId = existing.id;
+
+      if (existing.count <= 1) {
+        delete currentCart[realKey];
+      } else {
+        currentCart[realKey] = { ...existing, count: existing.count - 1 };
+      }
+
       return {
         ...prev,
-        [activeCartId]: updatedCart,
+        [cartKey]: currentCart,
       };
     });
 
-    CartService.decrementItem(itemId).catch((e) => console.warn('Cloud sync decrement failed:', e));
+    CartService.decrementItem(serverTargetId).catch((e) => console.warn('Cloud sync decrement failed:', e));
   };
 
   const deleteFromCart = (itemId: string) => {
+    if (isEventCart && activeEvent?.isCompleted) {
+      return;
+    }
+    if (!activeFamilyId && !isEventCart) {
+      return;
+    }
+
+    const currentKey = activeCartId.toLowerCase();
+    let serverTargetId = itemId;
+
     setCarts((prev) => {
-      const currentCart = prev[activeCartId] || {};
-      const updatedCart = { ...currentCart };
-      delete updatedCart[itemId];
+      const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || activeCartId;
+      const currentCart = { ...(prev[cartKey] || {}) };
+
+      // Ищем сначала НЕКУПЛЕННЫЙ товар
+      let realKey = Object.keys(currentCart).find((k) => {
+        const c = currentCart[k];
+        return (
+          !c.isBought &&
+          (k.toLowerCase() === itemId.toLowerCase() ||
+            c.id.toLowerCase() === itemId.toLowerCase() ||
+            c.title.trim().toLowerCase() === itemId.trim().toLowerCase())
+        );
+      });
+
+      if (!realKey) {
+        realKey = Object.keys(currentCart).find((k) => {
+          const c = currentCart[k];
+          return (
+            k.toLowerCase() === itemId.toLowerCase() ||
+            c.id.toLowerCase() === itemId.toLowerCase() ||
+            c.title.trim().toLowerCase() === itemId.trim().toLowerCase()
+          );
+        });
+      }
+
+      if (!realKey) return prev;
+
+      serverTargetId = currentCart[realKey].id;
+      delete currentCart[realKey];
+
       return {
         ...prev,
-        [activeCartId]: updatedCart,
+        [cartKey]: currentCart,
       };
     });
 
-    CartService.deleteItem(itemId).catch((e) => console.warn('Cloud sync delete failed:', e));
+    CartService.deleteItem(serverTargetId).catch((e) => console.warn('Cloud sync delete failed:', e));
   };
 
   // Распределение товара: взять себе или снять выбор
   const assignCartItem = (itemId: string): { success: boolean; message?: string } => {
-    const currentCart = carts[activeCartId] || {};
-    const item = currentCart[itemId];
+    if (isEventCart && activeEvent?.isCompleted) {
+      return { success: false, message: 'Мероприятие завершено. Корзина доступна только для чтения.' };
+    }
+
+    const matchedKey = Object.keys(carts).find((k) => k.toLowerCase() === activeCartId.toLowerCase()) || activeCartId;
+    const currentCart = carts[matchedKey] || {};
+    const itemKey = Object.keys(currentCart).find((k) => k.toLowerCase() === itemId.toLowerCase() || currentCart[k].id.toLowerCase() === itemId.toLowerCase());
+    const item = itemKey ? currentCart[itemKey] : undefined;
     if (!item) return { success: false, message: 'Товар не найден' };
 
-    if (item.assignedToUserId === null) {
+    const uId = currentUser.id.toLowerCase();
+    const assignedId = item.assignedToUserId?.toLowerCase() || null;
+
+    if (assignedId === null) {
       // Свободный товар -> берем себе
       setCarts((prev) => ({
         ...prev,
-        [activeCartId]: {
-          ...prev[activeCartId],
-          [itemId]: { ...prev[activeCartId][itemId], assignedToUserId: currentUser.id },
+        [matchedKey]: {
+          ...prev[matchedKey],
+          [itemKey!]: { ...currentCart[itemKey!], assignedToUserId: currentUser.id },
         },
       }));
       CartService.assignProduct(item.id).catch((e) => console.warn('Cloud assignProduct failed:', e));
       return { success: true };
     }
 
-    if (item.assignedToUserId === currentUser.id) {
+    if (assignedId === uId) {
       // Мы сами взяли -> снимаем свой выбор (и сбрасываем статус "Куплено")
       setCarts((prev) => ({
         ...prev,
-        [activeCartId]: {
-          ...prev[activeCartId],
-          [itemId]: { ...prev[activeCartId][itemId], assignedToUserId: null, isBought: false },
+        [matchedKey]: {
+          ...prev[matchedKey],
+          [itemKey!]: { ...currentCart[itemKey!], assignedToUserId: null, isBought: false },
         },
       }));
       CartService.assignProduct(item.id).catch((e) => console.warn('Cloud assignProduct failed:', e));
@@ -1315,7 +1644,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...(family?.members || []),
       ...Object.values(registeredUsers),
     ];
-    const otherUser = allKnownUsers.find((m) => m.id === item.assignedToUserId);
+    const otherUser = allKnownUsers.find((m) => m.id.toLowerCase() === assignedId);
     const otherName = otherUser ? otherUser.name : 'другой участник';
     return {
       success: false,
@@ -1325,23 +1654,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Отметка статуса "Куплено" (только участник, который выбрал товар, может отметить его купленным)
   const toggleItemPurchased = (itemId: string): { success: boolean; message?: string } => {
-    const currentCart = carts[activeCartId] || {};
-    const item = currentCart[itemId];
+    if (isEventCart && activeEvent?.isCompleted) {
+      return { success: false, message: 'Мероприятие завершено. Корзина доступна только для чтения.' };
+    }
+
+    const matchedKey = Object.keys(carts).find((k) => k.toLowerCase() === activeCartId.toLowerCase()) || activeCartId;
+    const currentCart = carts[matchedKey] || {};
+    const itemKey = Object.keys(currentCart).find((k) => k.toLowerCase() === itemId.toLowerCase() || currentCart[k].id.toLowerCase() === itemId.toLowerCase());
+    const item = itemKey ? currentCart[itemKey] : undefined;
     if (!item) return { success: false, message: 'Товар не найден' };
 
-    if (item.assignedToUserId === null) {
+    const uId = currentUser.id.toLowerCase();
+    const assignedId = item.assignedToUserId?.toLowerCase() || null;
+
+    if (assignedId === null) {
       return {
         success: false,
         message: 'Сначала выберите товар («Куплю я»), чтобы затем отметить его статусом «Куплено».',
       };
     }
 
-    if (item.assignedToUserId !== currentUser.id) {
+    if (assignedId !== uId) {
       const allKnownUsers = [
         ...(family?.members || []),
         ...Object.values(registeredUsers),
       ];
-      const otherUser = allKnownUsers.find((m) => m.id === item.assignedToUserId);
+      const otherUser = allKnownUsers.find((m) => m.id.toLowerCase() === assignedId);
       const otherName = otherUser ? otherUser.name : 'другой участник';
       return {
         success: false,
@@ -1350,14 +1688,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     setCarts((prev) => {
-      const activeCart = prev[activeCartId] || {};
-      const it = activeCart[itemId];
+      const activeCart = prev[matchedKey] || {};
+      const it = activeCart[itemKey!];
       if (!it) return prev;
       return {
         ...prev,
-        [activeCartId]: {
+        [matchedKey]: {
           ...activeCart,
-          [itemId]: {
+          [itemKey!]: {
             ...it,
             isBought: !it.isBought,
           },
@@ -1366,26 +1704,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     CartService.togglePurchased(item.id).catch((e) => console.warn('Cloud togglePurchased failed:', e));
-
     return { success: true };
   };
 
   const totalCartItemsCount = Object.values(cartItems).reduce((sum, item) => sum + item.count, 0);
 
-  const createEvent = async (data: { title: string; date: string; emoji: string; familyId?: string }) => {
+  const createEvent = async (data: { title: string; date: string; emoji: string; familyId?: string; hasCart?: boolean }) => {
     const targetFamilyId = data.familyId || activeFamilyId || (families.length > 0 ? families[0].id : undefined);
     const tempId = `evt-${Date.now()}`;
+    const willHaveCart = data.hasCart ?? true;
     const newEvt: AppEvent = {
       id: tempId,
       title: data.title,
       date: data.date,
       emoji: data.emoji,
       badgeBg: '#FFF0F4',
-      hasCart: false,
+      hasCart: willHaveCart,
       isCompleted: false,
       familyId: targetFamilyId,
     };
     setEvents((prev) => [newEvt, ...prev]);
+    if (willHaveCart) {
+      setCarts((prev) => ({
+        ...prev,
+        [tempId]: {},
+      }));
+    }
 
     if (targetFamilyId) {
       try {
@@ -1394,11 +1738,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           eventDate: data.date,
           icon: data.emoji,
           familyId: targetFamilyId,
+          hasCart: willHaveCart,
         });
         if (cloudEvt?.id) {
+          const realId = String(cloudEvt.id);
           setEvents((prev) =>
-            prev.map((e) => (e.id === tempId ? { ...e, id: String(cloudEvt.id) } : e))
+            prev.map((e) => (e.id === tempId ? { ...e, id: realId, hasCart: cloudEvt.hasCart ?? willHaveCart } : e))
           );
+          if (willHaveCart) {
+            setCarts((prev) => {
+              const copy = { ...prev };
+              copy[realId] = copy[tempId] || {};
+              delete copy[tempId];
+              return copy;
+            });
+            if (!cloudEvt.hasCart) {
+              EventsService.createEventCart(realId).catch(() => {});
+            }
+          }
         }
       } catch (e) {
         console.warn('Backend createEvent failed:', e);
@@ -1420,12 +1777,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const createEventCart = (id: string) => {
+    const norm = id.toLowerCase();
     setEvents((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, hasCart: true } : e))
+      prev.map((e) => (e.id.toLowerCase() === norm ? { ...e, hasCart: true } : e))
     );
     setCarts((prev) => ({
       ...prev,
-      [id]: prev[id] || {},
+      [norm]: prev[norm] || prev[id] || {},
     }));
     EventsService.createEventCart(id).catch((e) => console.warn('Backend createEventCart failed:', e));
   };
@@ -1433,7 +1791,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const getEventCartStats = (
     eventId: string
   ): { total: number; assigned: number; bought: number } => {
-    const eventCart = carts[eventId] || {};
+    const norm = eventId.toLowerCase();
+    const eventCartKey = Object.keys(carts).find((k) => k.toLowerCase() === norm) || eventId;
+    const eventCart = carts[eventCartKey] || {};
     const items = Object.values(eventCart);
     const total = items.length;
     const assigned = items.filter((i) => i.assignedToUserId !== null).length;

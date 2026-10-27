@@ -359,7 +359,7 @@ export const EventsService = {
   },
 
   // Создание нового мероприятия (POST /api/events)
-  async createEvent(payload: { title: string; eventDate: string; icon?: string; familyId?: string }): Promise<EventDto> {
+  async createEvent(payload: { title: string; eventDate: string; icon?: string; familyId?: string; hasCart?: boolean }): Promise<EventDto> {
     const token = await AuthService.getToken();
     const res = await fetch(`${API_BASE_URL}/events`, {
       method: 'POST',

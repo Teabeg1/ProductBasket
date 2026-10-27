@@ -156,46 +156,67 @@ export const CartScreen: React.FC<CartScreenProps> = ({
         </View>
       )}
 
-      {/* Баннер отсутствия группы */}
-      {!family && !isEventCart && (
-        <TouchableOpacity
-          style={[styles.noFamilyBanner, { backgroundColor: colors.card, borderColor: colors.border }]}
-          activeOpacity={0.7}
-          onPress={() => onOpenCreateFamily ? onOpenCreateFamily() : onOpenJoinFamily?.()}
-        >
-          <Text style={[styles.noFamilyText, { color: colors.textDark }]}>
+      {/* Блокировка работы с товарами при отсутствии группы */}
+      {!family && !isEventCart ? (
+        <View style={styles.emptyContainer}>
+          <View style={[styles.emptyIconCircle, { backgroundColor: colors.cardSecondary }]}>
+            <ShoppingBag size={42} color={colors.primary} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.textDark }]}>
             Вы пока не состоите в группе
           </Text>
-          <Text style={[styles.noFamilySubtext, { color: colors.primary }]}>
-            Создать группу или войти по коду ➔
+          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+            Чтобы добавлять товары и совместно вести корзину, создайте свою группу или присоединитесь к существующей.
           </Text>
-        </TouchableOpacity>
-      )}
+          <TouchableOpacity
+            style={[
+              styles.addBtn,
+              {
+                backgroundColor: colors.primary,
+                width: 'auto',
+                paddingHorizontal: 20,
+                marginTop: 20,
+              },
+            ]}
+            activeOpacity={0.8}
+            onPress={() => (onOpenCreateFamily ? onOpenCreateFamily() : onOpenJoinFamily?.())}
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
+              Создать группу или войти по коду
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        /* 2-Column Product Grid */
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.grid}>
+            {catalogProducts.map((prod) => {
+              const activeCartItem = Object.values(cartItems).find(
+                (it) =>
+                  !it.isBought &&
+                  (it.id.toLowerCase() === prod.id.toLowerCase() ||
+                    it.title.trim().toLowerCase() === prod.title.trim().toLowerCase())
+              );
+              const boughtCartItem = Object.values(cartItems).find(
+                (it) =>
+                  it.isBought &&
+                  (it.id.toLowerCase() === prod.id.toLowerCase() ||
+                    it.title.trim().toLowerCase() === prod.title.trim().toLowerCase())
+              );
+              const inCartItem = activeCartItem || boughtCartItem || cartItems[prod.id];
+              const count = activeCartItem ? activeCartItem.count : 0;
+              const isBought = !activeCartItem && Boolean(boughtCartItem);
+              const targetCartId = activeCartItem ? activeCartItem.id : (inCartItem ? inCartItem.id : prod.id);
+              const b64 = prod.imageKey ? PRODUCT_IMAGES[prod.imageKey] : null;
+              const imageUri = b64 ? `data:image/jpeg;base64,${b64}` : null;
+              const isCustom = prod.id.startsWith('custom-');
 
-      {/* 2-Column Product Grid */}
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.grid}>
-          {catalogProducts.map((prod) => {
-            const activeCartItem = Object.values(cartItems).find(
-              (it) => !it.isBought && (it.id === prod.id || it.title.toLowerCase() === prod.title.toLowerCase())
-            );
-            const boughtCartItem = Object.values(cartItems).find(
-              (it) => it.isBought && (it.id === prod.id || it.title.toLowerCase() === prod.title.toLowerCase())
-            );
-            const inCartItem = activeCartItem || cartItems[prod.id];
-            const count = activeCartItem ? activeCartItem.count : (inCartItem && !inCartItem.isBought ? inCartItem.count : 0);
-            const isBought = !activeCartItem && Boolean(boughtCartItem);
-            const targetCartId = inCartItem?.id || prod.id;
-            const b64 = prod.imageKey ? PRODUCT_IMAGES[prod.imageKey] : null;
-            const imageUri = b64 ? `data:image/jpeg;base64,${b64}` : null;
-            const isCustom = prod.id.startsWith('custom-');
-
-            return (
-              <View
-                key={prod.id}
+              return (
+                <View
+                  key={prod.id}
                 style={[
                   styles.card,
                   {
@@ -214,12 +235,19 @@ export const CartScreen: React.FC<CartScreenProps> = ({
                   <View style={[styles.boughtBadge, { backgroundColor: colors.success }]}>
                     <Check size={11} color="#FFFFFF" strokeWidth={3} style={{ marginRight: 3 }} />
                     <Text style={styles.boughtBadgeText} numberOfLines={1}>
-                      {inCartItem?.assignedToUserId === currentUser.id
+                      {inCartItem?.assignedToUserId?.toLowerCase() === currentUser.id.toLowerCase()
                         ? 'Куплено вами'
                         : (() => {
-                            const buyer = family?.members.find((m) => m.id === inCartItem?.assignedToUserId);
+                            const buyer = family?.members.find((m) => m.id.toLowerCase() === inCartItem?.assignedToUserId?.toLowerCase());
                             return buyer ? `Купил(а) ${buyer.name}` : 'Куплено';
                           })()}
+                    </Text>
+                  </View>
+                ) : boughtCartItem ? (
+                  <View style={[styles.boughtBadge, { backgroundColor: colors.success }]}>
+                    <Check size={11} color="#FFFFFF" strokeWidth={3} style={{ marginRight: 3 }} />
+                    <Text style={styles.boughtBadgeText} numberOfLines={1}>
+                      {boughtCartItem.count} куплено
                     </Text>
                   </View>
                 ) : isCustom ? (
@@ -271,7 +299,20 @@ export const CartScreen: React.FC<CartScreenProps> = ({
                   </View>
 
                   {/* Add Button or Counter */}
-                  {count === 0 ? (
+                  {isEventCompleted ? (
+                    count > 0 ? (
+                      <View
+                        style={[
+                          styles.counterBox,
+                          { backgroundColor: colors.cardSecondary, paddingHorizontal: 10 },
+                        ]}
+                      >
+                        <Text style={[styles.counterValue, { color: colors.textSecondary }]}>
+                          {count} шт
+                        </Text>
+                      </View>
+                    ) : null
+                  ) : count === 0 ? (
                     <TouchableOpacity
                       style={[styles.addBtn, { backgroundColor: colors.primaryLight }]}
                       activeOpacity={0.7}
@@ -284,7 +325,7 @@ export const CartScreen: React.FC<CartScreenProps> = ({
                       <TouchableOpacity
                         style={[styles.trashBtn, { backgroundColor: colors.errorLight }]}
                         activeOpacity={0.7}
-                        onPress={() => deleteFromCart(prod.id)}
+                        onPress={() => deleteFromCart(targetCartId)}
                       >
                         <Trash2 size={13} color={colors.error} />
                       </TouchableOpacity>
@@ -296,7 +337,7 @@ export const CartScreen: React.FC<CartScreenProps> = ({
                       >
                         <TouchableOpacity
                           style={styles.counterBtn}
-                          onPress={() => decrementCartItem(prod.id)}
+                          onPress={() => decrementCartItem(targetCartId)}
                         >
                           <Minus size={12} color={colors.primary} strokeWidth={2.5} />
                         </TouchableOpacity>
@@ -318,6 +359,7 @@ export const CartScreen: React.FC<CartScreenProps> = ({
           })}
         </View>
       </ScrollView>
+      )}
 
       {/* Модальное окно переключения семей */}
       <FamilySwitcherModal

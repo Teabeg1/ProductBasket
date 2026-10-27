@@ -122,6 +122,8 @@ public class AuthController : ControllerBase
     [Authorize]
     [HttpPut("profile")]
     [HttpPut("me")]
+    [HttpPost("profile")]
+    [HttpPost("me")]
     public async Task<ActionResult<UserDto>> UpdateProfile([FromBody] UpdateProfileRequest request)
     {
         var userId = GetCurrentUserId();
@@ -145,10 +147,11 @@ public class AuthController : ControllerBase
 
         foreach (var fm in user.FamilyMembers)
         {
-            await _hubContext.Clients.Group(fm.FamilyId.ToString()).SendAsync("MemberUpdated", new
+            var fStr = fm.FamilyId.ToString().ToLowerInvariant();
+            await _hubContext.Clients.Group(fStr).SendAsync("MemberUpdated", new
             {
-                familyId = fm.FamilyId,
-                userId = user.Id,
+                familyId = fStr,
+                userId = user.Id.ToString().ToLowerInvariant(),
                 displayName = user.DisplayName
             });
         }
@@ -248,14 +251,21 @@ public class AuthController : ControllerBase
 
         foreach (var famId in userFamilyIds)
         {
-            await _hubContext.Clients.Group(famId.ToString()).SendAsync("MemberRemoved", new
+            var fStr = famId.ToString().ToLowerInvariant();
+            var uStr = userId.Value.ToString().ToLowerInvariant();
+            await _hubContext.Clients.Group(fStr).SendAsync("MemberRemoved", new
             {
-                familyId = famId,
-                userId = userId.Value
+                familyId = fStr,
+                userId = uStr
             });
-            await _hubContext.Clients.Group(famId.ToString()).SendAsync("CartUpdated", new
+            await _hubContext.Clients.Group(fStr).SendAsync("MemberLeft", new
             {
-                familyId = famId
+                familyId = fStr,
+                userId = uStr
+            });
+            await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new
+            {
+                familyId = fStr
             });
         }
 

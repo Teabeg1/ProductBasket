@@ -90,13 +90,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     setEditUserModalVisible(true);
   };
 
-  const handleSaveUserName = () => {
+  const handleSaveUserName = async () => {
     const trimmed = userNameInput.trim();
     if (!trimmed) {
       Alert.alert('Ошибка', 'Имя пользователя не может быть пустым');
       return;
     }
-    updateUserName(trimmed);
+    await updateUserName(trimmed);
     setEditUserModalVisible(false);
   };
 
@@ -145,8 +145,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           text: t('leaveFamily'),
           style: 'destructive',
           onPress: () => {
+            const willHaveNoFamilies = families.length <= 1;
             leaveFamily();
-            if (families.length <= 1) {
+            if (willHaveNoFamilies) {
               onNavigateToOnboarding();
             }
           },

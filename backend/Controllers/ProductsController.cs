@@ -98,11 +98,14 @@ public class ProductsController : ControllerBase
         _context.Products.Add(customProduct);
         await _context.SaveChangesAsync();
 
-        await _hubContext.Clients.Group(targetFamilyId.Value.ToString()).SendAsync("CustomProductCreated", new
+        var fStr = targetFamilyId.Value.ToString().ToLowerInvariant();
+        var pStr = customProduct.Id.ToString().ToLowerInvariant();
+        await _hubContext.Clients.Group(fStr).SendAsync("CustomProductCreated", new
         {
-            familyId = targetFamilyId.Value,
-            productId = customProduct.Id,
-            title = customProduct.Title
+            familyId = fStr,
+            productId = pStr,
+            title = customProduct.Title,
+            product = MapProductDto(customProduct)
         });
 
         return StatusCode(StatusCodes.Status201Created, MapProductDto(customProduct));
@@ -112,6 +115,7 @@ public class ProductsController : ControllerBase
     /// Удаление пользовательского товара
     /// </summary>
     [HttpDelete("custom/{id:guid}")]
+    [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteCustomProduct([FromRoute] Guid id)
     {
         var userId = GetCurrentUserId();
@@ -144,15 +148,18 @@ public class ProductsController : ControllerBase
         _context.Products.Remove(product);
         await _context.SaveChangesAsync();
 
-        await _hubContext.Clients.Group(familyId.ToString()).SendAsync("CartUpdated", new
+        var famStr = familyId.ToString().ToLowerInvariant();
+        var prodStr = id.ToString().ToLowerInvariant();
+
+        await _hubContext.Clients.Group(famStr).SendAsync("CartUpdated", new
         {
-            familyId = familyId
+            familyId = famStr
         });
 
-        await _hubContext.Clients.Group(familyId.ToString()).SendAsync("CustomProductDeleted", new
+        await _hubContext.Clients.Group(famStr).SendAsync("CustomProductDeleted", new
         {
-            familyId = familyId,
-            productId = id
+            familyId = famStr,
+            productId = prodStr
         });
 
         return Ok(new { success = true });

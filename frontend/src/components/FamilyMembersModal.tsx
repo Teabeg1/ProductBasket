@@ -25,10 +25,11 @@ export const FamilyMembersModal: React.FC<FamilyMembersModalProps> = ({
   onClose,
   targetFamily,
 }) => {
-  const { colors, family: activeFamily, currentUser, cartItems, getFamilyCart } = useApp();
+  const { colors, family: activeFamily, currentUser, cartItems, getFamilyCart, families } = useApp();
   const [copied, setCopied] = useState(false);
 
-  const family = targetFamily || activeFamily;
+  const targetId = targetFamily?.id || activeFamily?.id;
+  const family = (targetId ? families.find((f) => f.id.toLowerCase() === targetId.toLowerCase()) : null) || targetFamily || activeFamily;
 
   if (!family) return null;
 
@@ -54,7 +55,7 @@ export const FamilyMembersModal: React.FC<FamilyMembersModalProps> = ({
   const familyCart = family && getFamilyCart ? getFamilyCart(family.id) : cartItems;
   const itemsList = Object.values(familyCart || {});
   const getMemberAssignedCount = (memberId: string) => {
-    return itemsList.filter((item) => item.assignedToUserId === memberId).length;
+    return itemsList.filter((item) => item.assignedToUserId?.toLowerCase() === memberId.toLowerCase()).length;
   };
 
   return (

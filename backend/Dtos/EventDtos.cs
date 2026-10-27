@@ -31,6 +31,8 @@ public class CreateEventRequest
     public string? Icon { get; set; } = "🎉";
 
     public Guid? FamilyId { get; set; }
+
+    public bool? HasCart { get; set; }
 }
 
 public class EventCartStatsDto

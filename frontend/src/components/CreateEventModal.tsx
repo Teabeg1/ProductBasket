@@ -58,6 +58,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
       date: date.trim() || today,
       emoji: selectedEmoji,
       familyId: selectedFamilyId || activeFamilyId || undefined,
+      hasCart: true,
     });
     setTitle('');
     setDate(today);

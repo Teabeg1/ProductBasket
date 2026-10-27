@@ -52,18 +52,18 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
 
 
   // Фильтруем мероприятия: показываем только мероприятия групп, к которым текущий пользователь имеет доступ
-  const userFamilyIds = families.map((f) => f.id);
-  const userEvents = events.filter((e) => !e.familyId || userFamilyIds.includes(e.familyId));
+  const userFamilyIds = families.map((f) => f.id.toLowerCase());
+  const userEvents = events.filter((e) => !e.familyId || userFamilyIds.includes(e.familyId.toLowerCase()));
 
   // Фильтр по ползунку пространств (все мероприятия vs мероприятия конкретной группы)
   const effectiveSpaceFilter =
-    selectedSpaceFilter === 'all' || families.some((f) => f.id === selectedSpaceFilter)
+    selectedSpaceFilter === 'all' || families.some((f) => f.id.toLowerCase() === selectedSpaceFilter.toLowerCase())
       ? selectedSpaceFilter
       : 'all';
 
   const spaceFilteredEvents = userEvents.filter((e) => {
     if (effectiveSpaceFilter === 'all') return true;
-    return e.familyId === effectiveSpaceFilter;
+    return e.familyId?.toLowerCase() === effectiveSpaceFilter.toLowerCase();
   });
 
   const activeEvents = spaceFilteredEvents.filter((e) => !e.isCompleted);
@@ -126,7 +126,9 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
   };
 
   const handleCartAction = (item: AppEvent) => {
-    if (!item.hasCart) {
+    const localStats = getEventCartStats(item.id);
+    const hasCart = Boolean(item.hasCart || (item as any).cartStats?.total > 0 || localStats.total > 0);
+    if (!hasCart) {
       createEventCart(item.id);
       Alert.alert(
         'Корзина создана!',
@@ -329,9 +331,11 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
             ) : (
               <View style={styles.eventsList}>
                 {activeEvents.map((item) => {
-                  const stats = item.hasCart ? getEventCartStats(item.id) : null;
+                  const localStats = getEventCartStats(item.id);
+                  const hasCart = Boolean(item.hasCart || (item as any).cartStats?.total > 0 || localStats.total > 0);
+                  const stats = hasCart ? (localStats.total > 0 ? localStats : ((item as any).cartStats || localStats)) : null;
                   const allBought = stats && stats.total > 0 && stats.total === stats.bought;
-                  const eventFamily = families.find((f) => f.id === item.familyId);
+                  const eventFamily = families.find((f) => f.id.toLowerCase() === item.familyId?.toLowerCase());
 
                   return (
                     <View
@@ -428,7 +432,7 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
                       )}
 
                       {/* Счётчик товаров корзины мероприятия */}
-                      {item.hasCart && stats ? (
+                      {hasCart && stats ? (
                         <View
                           style={[
                             styles.cartStatsRow,
@@ -467,7 +471,7 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
                       <TouchableOpacity
                         style={[
                           styles.cartActionBtn,
-                          item.hasCart
+                          hasCart
                             ? { backgroundColor: colors.primary }
                             : { backgroundColor: colors.primaryLight },
                         ]}
@@ -476,19 +480,19 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
                       >
                         <ShoppingBag
                           size={15}
-                          color={item.hasCart ? '#FFFFFF' : colors.primary}
+                          color={hasCart ? '#FFFFFF' : colors.primary}
                           strokeWidth={2.2}
                           style={{ marginRight: 6 }}
                         />
                         <Text
                           style={[
                             styles.cartActionBtnText,
-                            { color: item.hasCart ? '#FFFFFF' : colors.primary },
+                            { color: hasCart ? '#FFFFFF' : colors.primary },
                           ]}
                         >
-                          {item.hasCart ? t('openCartBtn') : t('createCartBtn')}
+                          {hasCart ? t('openCartBtn') : t('createCartBtn')}
                         </Text>
-                        {item.hasCart && (
+                        {hasCart && (
                           <ArrowRight
                             size={14}
                             color="#FFFFFF"
@@ -532,8 +536,9 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
             ) : (
               <View style={styles.eventsList}>
                 {completedEvents.map((item) => {
-                  const stats = item.hasCart ? getEventCartStats(item.id) : null;
-                  const eventFamily = families.find((f) => f.id === item.familyId);
+                  const localStats = getEventCartStats(item.id);
+                  const stats = localStats.total > 0 ? localStats : ((item as any).cartStats || localStats);
+                  const eventFamily = families.find((f) => f.id.toLowerCase() === item.familyId?.toLowerCase());
 
                   return (
                     <View

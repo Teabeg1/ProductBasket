@@ -35,7 +35,22 @@ public class CartController : ControllerBase
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var targetFamilyId = await ResolveFamilyIdAsync(userId.Value, familyId);
+        Guid? targetFamilyId = null;
+        if (eventId.HasValue)
+        {
+            var ev = await _context.Events.FindAsync(eventId.Value);
+            if (ev == null) return NotFound(new { message = "Мероприятие не найдено" });
+            if (!await IsUserInFamilyAsync(userId.Value, ev.FamilyId))
+            {
+                return Forbid();
+            }
+            targetFamilyId = ev.FamilyId;
+        }
+        else
+        {
+            targetFamilyId = await ResolveFamilyIdAsync(userId.Value, familyId);
+        }
+
         if (targetFamilyId == null)
         {
             return Ok(new List<CartItemDto>());
@@ -68,7 +83,30 @@ public class CartController : ControllerBase
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
-        var targetFamilyId = await ResolveFamilyIdAsync(userId.Value, request.FamilyId);
+        Guid? targetFamilyId = null;
+        if (request.EventId.HasValue)
+        {
+            var ev = await _context.Events.FindAsync(request.EventId.Value);
+            if (ev == null) return NotFound(new { message = "Мероприятие не найдено" });
+            if (!await IsUserInFamilyAsync(userId.Value, ev.FamilyId))
+            {
+                return Forbid();
+            }
+            if (ev.IsCompleted)
+            {
+                return BadRequest(new { message = "Мероприятие завершено. Нельзя добавлять товары в завершенное мероприятие." });
+            }
+            if (!ev.HasCart)
+            {
+                ev.HasCart = true;
+            }
+            targetFamilyId = ev.FamilyId;
+        }
+        else
+        {
+            targetFamilyId = await ResolveFamilyIdAsync(userId.Value, request.FamilyId);
+        }
+
         if (targetFamilyId == null)
         {
             return BadRequest(new { message = "Группа не найдена или вы не являетесь её участником." });
@@ -159,6 +197,15 @@ public class CartController : ControllerBase
         var familyId = item.FamilyId;
         var eventId = item.EventId;
 
+        if (eventId.HasValue)
+        {
+            var ev = await _context.Events.FindAsync(eventId.Value);
+            if (ev != null && ev.IsCompleted)
+            {
+                return BadRequest(new { message = "Мероприятие завершено. Редактирование корзины невозможно." });
+            }
+        }
+
         if (request.Count <= 0)
         {
             _context.CartItems.Remove(item);
@@ -194,6 +241,15 @@ public class CartController : ControllerBase
 
         var familyId = item.FamilyId;
         var eventId = item.EventId;
+
+        if (eventId.HasValue)
+        {
+            var ev = await _context.Events.FindAsync(eventId.Value);
+            if (ev != null && ev.IsCompleted)
+            {
+                return BadRequest(new { message = "Мероприятие завершено. Редактирование корзины невозможно." });
+            }
+        }
 
         if (item.Quantity <= 1)
         {
@@ -231,6 +287,15 @@ public class CartController : ControllerBase
         var familyId = item.FamilyId;
         var eventId = item.EventId;
 
+        if (eventId.HasValue)
+        {
+            var ev = await _context.Events.FindAsync(eventId.Value);
+            if (ev != null && ev.IsCompleted)
+            {
+                return BadRequest(new { message = "Мероприятие завершено. Редактирование корзины невозможно." });
+            }
+        }
+
         _context.CartItems.Remove(item);
         await _context.SaveChangesAsync();
 
@@ -256,6 +321,15 @@ public class CartController : ControllerBase
         if (!await IsUserInFamilyAsync(userId.Value, item.FamilyId))
         {
             return Forbid();
+        }
+
+        if (item.EventId.HasValue)
+        {
+            var ev = await _context.Events.FindAsync(item.EventId.Value);
+            if (ev != null && ev.IsCompleted)
+            {
+                return BadRequest(new CartActionResponse { Success = false, Message = "Мероприятие завершено. Редактирование корзины невозможно." });
+            }
         }
 
         var user = await _context.Users.FindAsync(userId.Value);
@@ -316,6 +390,15 @@ public class CartController : ControllerBase
             return Forbid();
         }
 
+        if (item.EventId.HasValue)
+        {
+            var ev = await _context.Events.FindAsync(item.EventId.Value);
+            if (ev != null && ev.IsCompleted)
+            {
+                return BadRequest(new CartActionResponse { Success = false, Message = "Мероприятие завершено. Редактирование корзины невозможно." });
+            }
+        }
+
         var user = await _context.Users.FindAsync(userId.Value);
         if (user == null) return Unauthorized();
 
@@ -364,6 +447,15 @@ public class CartController : ControllerBase
             return Forbid();
         }
 
+        if (item.EventId.HasValue)
+        {
+            var ev = await _context.Events.FindAsync(item.EventId.Value);
+            if (ev != null && ev.IsCompleted)
+            {
+                return BadRequest(new CartActionResponse { Success = false, Message = "Мероприятие завершено. Редактирование корзины невозможно." });
+            }
+        }
+
         if (item.TakenByUserId == null)
         {
             return Ok(new CartActionResponse { Success = true, Item = MapCartItemDto(item) });
@@ -407,6 +499,15 @@ public class CartController : ControllerBase
         if (!await IsUserInFamilyAsync(userId.Value, item.FamilyId))
         {
             return Forbid();
+        }
+
+        if (item.EventId.HasValue)
+        {
+            var ev = await _context.Events.FindAsync(item.EventId.Value);
+            if (ev != null && ev.IsCompleted)
+            {
+                return BadRequest(new CartActionResponse { Success = false, Message = "Мероприятие завершено. Редактирование корзины невозможно." });
+            }
         }
 
         if (item.TakenByUserId == null)
@@ -474,13 +575,14 @@ public class CartController : ControllerBase
 
     private async Task BroadcastStatusChangedAsync(CartItem item, string? takenByName)
     {
-        await _hubContext.Clients.Group(item.FamilyId.ToString()).SendAsync("ProductStatusChanged", new
+        var fStr = item.FamilyId.ToString().ToLowerInvariant();
+        await _hubContext.Clients.Group(fStr).SendAsync("ProductStatusChanged", new
         {
-            cartItemId = item.Id,
-            productId = item.ProductId,
+            cartItemId = item.Id.ToString().ToLowerInvariant(),
+            productId = item.ProductId?.ToString().ToLowerInvariant(),
             status = item.Status,
-            takenByUserId = item.TakenByUserId,
-            assignedToUserId = item.TakenByUserId,
+            takenByUserId = item.TakenByUserId?.ToString().ToLowerInvariant(),
+            assignedToUserId = item.TakenByUserId?.ToString().ToLowerInvariant(),
             takenByName = takenByName ?? item.TakenByUser?.DisplayName,
             isBought = item.IsBought
         });
@@ -488,10 +590,12 @@ public class CartController : ControllerBase
 
     private async Task BroadcastCartUpdatedAsync(Guid familyId, Guid? eventId)
     {
-        await _hubContext.Clients.Group(familyId.ToString()).SendAsync("CartUpdated", new
+        var fStr = familyId.ToString().ToLowerInvariant();
+        var eStr = eventId?.ToString().ToLowerInvariant();
+        await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new
         {
-            familyId = familyId,
-            eventId = eventId
+            familyId = fStr,
+            eventId = eStr
         });
     }
 

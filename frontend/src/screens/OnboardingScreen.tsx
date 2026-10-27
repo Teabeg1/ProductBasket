@@ -161,7 +161,7 @@ export const OnboardingScreen: React.FC = () => {
           {/* Верхняя строка с именем аккаунта и кнопкой выхода */}
           <View style={styles.topHeader}>
             <View style={{ flex: 1, marginRight: 8 }}>
-              {(navigation.canGoBack() || family != null) && (
+              {(navigation.canGoBack() || currentUser?.id || family != null) && (
                 <TouchableOpacity
                   style={[styles.backBtnPill, { backgroundColor: colors.card, borderColor: colors.border }]}
                   activeOpacity={0.7}

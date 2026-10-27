@@ -115,9 +115,10 @@ public class FamilyController : ControllerBase
         {
             newMember.User = user;
             var memberDto = MapMemberDto(newMember, userId.Value);
-            await _hubContext.Clients.Group(family.Id.ToString()).SendAsync("MemberJoined", new
+            var fStr = family.Id.ToString().ToLowerInvariant();
+            await _hubContext.Clients.Group(fStr).SendAsync("MemberJoined", new
             {
-                familyId = family.Id,
+                familyId = fStr,
                 member = memberDto
             });
         }
@@ -220,9 +221,11 @@ public class FamilyController : ControllerBase
 
         await _context.SaveChangesAsync();
 
-        await _hubContext.Clients.Group(targetFamilyId.Value.ToString()).SendAsync("CartUpdated", new { familyId = targetFamilyId.Value });
-        await _hubContext.Clients.Group(targetFamilyId.Value.ToString()).SendAsync("MemberLeft", new { familyId = targetFamilyId.Value, userId = userId.Value });
-        await _hubContext.Clients.Group(targetFamilyId.Value.ToString()).SendAsync("MemberRemoved", new { familyId = targetFamilyId.Value, userId = userId.Value });
+        var fStr = targetFamilyId.Value.ToString().ToLowerInvariant();
+        var uStr = userId.Value.ToString().ToLowerInvariant();
+        await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new { familyId = fStr });
+        await _hubContext.Clients.Group(fStr).SendAsync("MemberLeft", new { familyId = fStr, userId = uStr });
+        await _hubContext.Clients.Group(fStr).SendAsync("MemberRemoved", new { familyId = fStr, userId = uStr });
 
         return Ok(new { success = true, message = "Вы вышли из группы" });
     }
@@ -261,8 +264,10 @@ public class FamilyController : ControllerBase
 
         await _context.SaveChangesAsync();
 
-        await _hubContext.Clients.Group(targetFamilyId.Value.ToString()).SendAsync("CartUpdated", new { familyId = targetFamilyId.Value });
-        await _hubContext.Clients.Group(targetFamilyId.Value.ToString()).SendAsync("MemberRemoved", new { familyId = targetFamilyId.Value, userId = memberUserId });
+        var fStr = targetFamilyId.Value.ToString().ToLowerInvariant();
+        var uStr = memberUserId.ToString().ToLowerInvariant();
+        await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new { familyId = fStr });
+        await _hubContext.Clients.Group(fStr).SendAsync("MemberRemoved", new { familyId = fStr, userId = uStr });
 
         return Ok(new { success = true });
     }
@@ -286,7 +291,8 @@ public class FamilyController : ControllerBase
         family.Name = request.Name.Trim();
         await _context.SaveChangesAsync();
 
-        await _hubContext.Clients.Group(targetFamilyId.Value.ToString()).SendAsync("FamilyUpdated", new { familyId = targetFamilyId.Value, name = family.Name });
+        var fStr = targetFamilyId.Value.ToString().ToLowerInvariant();
+        await _hubContext.Clients.Group(fStr).SendAsync("FamilyUpdated", new { familyId = fStr, name = family.Name });
 
         return Ok(new { success = true, name = family.Name });
     }

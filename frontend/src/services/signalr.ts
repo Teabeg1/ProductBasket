@@ -101,6 +101,7 @@ class SignalRManager {
   private eventCartCreatedListeners: Set<EventCartCreatedCallback> = new Set();
   private customProductCreatedListeners: Set<CustomProductCreatedCallback> = new Set();
   private customProductDeletedListeners: Set<CustomProductDeletedCallback> = new Set();
+  private activeFamilyId: string | null = null;
   private isConnecting = false;
 
   async start(): Promise<signalR.HubConnection | null> {
@@ -229,8 +230,30 @@ class SignalRManager {
         });
       });
 
+      this.connection.onreconnected(async (connectionId) => {
+        console.log('[SignalR] Reconnected successfully:', connectionId);
+        if (this.activeFamilyId) {
+          try {
+            await this.connection?.invoke('JoinFamily', this.activeFamilyId);
+            console.log('[SignalR] Rejoined family group after reconnect:', this.activeFamilyId);
+          } catch (e) {
+            console.warn('[SignalR] Failed to rejoin family group after reconnect:', e);
+          }
+        }
+      });
+
       await this.connection.start();
       console.log('[SignalR] Connected successfully to CartHub');
+
+      if (this.activeFamilyId) {
+        try {
+          await this.connection.invoke('JoinFamily', this.activeFamilyId);
+          console.log('[SignalR] Auto-joined active family after start:', this.activeFamilyId);
+        } catch (e) {
+          console.warn('[SignalR] Auto-join active family failed:', e);
+        }
+      }
+
       return this.connection;
     } catch (err) {
       console.warn('[SignalR] Connection start failed (will retry):', err);
@@ -241,9 +264,24 @@ class SignalRManager {
   }
 
   async joinFamily(familyId: string) {
+    if (!familyId) return;
+    this.activeFamilyId = familyId;
+
+    if (!this.connection || this.connection.state === signalR.HubConnectionState.Disconnected) {
+      await this.start();
+    }
+
+    if (this.connection?.state === signalR.HubConnectionState.Connecting) {
+      for (let i = 0; i < 25; i++) {
+        if (this.connection.state === signalR.HubConnectionState.Connected) break;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+
     if (this.connection?.state === signalR.HubConnectionState.Connected) {
       try {
         await this.connection.invoke('JoinFamily', familyId);
+        console.log('[SignalR] Successfully joined family group:', familyId);
       } catch (err) {
         console.warn('[SignalR] joinFamily failed:', err);
       }

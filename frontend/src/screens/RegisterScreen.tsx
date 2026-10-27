@@ -19,10 +19,9 @@ import { Colors, Typography, Radii } from '../constants/theme';
 import { AuthService } from '../services/api';
 import { useApp } from '../context/AppContext';
 import type { AuthNavigationProp } from '../navigation/types';
-
 export const RegisterScreen: React.FC = () => {
   const navigation = useNavigation<AuthNavigationProp>();
-  const { colors, registerUser } = useApp();
+  const { colors, setCurrentUserFromAuth } = useApp();
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -97,10 +96,10 @@ export const RegisterScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      await AuthService.register({ displayName, email, password });
+      const authData = await AuthService.register({ displayName, email, password });
 
-      // Регистрируем пользователя в глобальном контексте приложения
-      registerUser(displayName, email);
+      // Регистрируем пользователя в глобальном контексте приложения с реальным ID из БД
+      await setCurrentUserFromAuth(authData);
 
       const successTitle = 'Аккаунт создан!';
       const successMessage = `Поздравляем, ${displayName}! Теперь создайте семейную группу или присоединитесь по коду.`;

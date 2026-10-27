@@ -22,7 +22,7 @@ import type { AuthNavigationProp } from '../navigation/types';
 
 export const OnboardingScreen: React.FC = () => {
   const navigation = useNavigation<AuthNavigationProp>();
-  const { colors, t, createFamily, joinFamilyWithCode, family, currentUser, logout } = useApp();
+  const { colors, t, createFamily, joinFamilyWithCode, family, families, currentUser, logout } = useApp();
 
   // Режим экрана: 'create' (Создать семью) или 'join' (Вступить по коду)
   const [activeTab, setActiveTab] = useState<'create' | 'join'>('create');
@@ -161,7 +161,7 @@ export const OnboardingScreen: React.FC = () => {
           {/* Верхняя строка с именем аккаунта и кнопкой выхода */}
           <View style={styles.topHeader}>
             <View style={{ flex: 1, marginRight: 8 }}>
-              {(navigation.canGoBack() || currentUser?.id || family != null) && (
+              {(navigation.canGoBack() || currentUser?.id || families.length > 0) && (
                 <TouchableOpacity
                   style={[styles.backBtnPill, { backgroundColor: colors.card, borderColor: colors.border }]}
                   activeOpacity={0.7}
@@ -174,7 +174,9 @@ export const OnboardingScreen: React.FC = () => {
                   }}
                 >
                   <ArrowLeft size={14} color={colors.textDark} style={{ marginRight: 5 }} />
-                  <Text style={[styles.backBtnPillText, { color: colors.textDark }]}>Назад</Text>
+                  <Text style={[styles.backBtnPillText, { color: colors.textDark }]}>
+                    {families.length > 0 ? 'В Настройки' : 'Назад'}
+                  </Text>
                 </TouchableOpacity>
               )}
               <Text style={[styles.title, { color: colors.textDark }]}>

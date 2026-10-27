@@ -108,6 +108,7 @@ interface AppContextType {
 
   // Events State
   events: AppEvent[];
+  refreshEvents: (familyId?: string) => Promise<void>;
   createEvent: (data: { title: string; date: string; emoji: string; familyId?: string; hasCart?: boolean }) => void;
   deleteEvent: (id: string) => void;
   createEventCart: (id: string) => void;
@@ -131,6 +132,8 @@ const generateRandomCode = (): string => {
   return result;
 };
 
+const sanitizeStorageKey = (key: string): string => key.replace(/[^a-zA-Z0-9._-]/g, '_');
+
 const Storage = {
   async setItem(key: string, value: string): Promise<void> {
     if (Platform.OS === 'web') {
@@ -142,7 +145,7 @@ const Storage = {
       return;
     }
     try {
-      await SecureStore.setItemAsync(key, value);
+      await SecureStore.setItemAsync(sanitizeStorageKey(key), value);
     } catch {}
   },
   async getItem(key: string): Promise<string | null> {
@@ -155,7 +158,7 @@ const Storage = {
       return null;
     }
     try {
-      return await SecureStore.getItemAsync(key);
+      return await SecureStore.getItemAsync(sanitizeStorageKey(key));
     } catch {
       return null;
     }
@@ -170,7 +173,7 @@ const Storage = {
       return;
     }
     try {
-      await SecureStore.deleteItemAsync(key);
+      await SecureStore.deleteItemAsync(sanitizeStorageKey(key));
     } catch {}
   },
 };
@@ -191,8 +194,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Идентификатор активной семьи
   const [activeFamilyId, setActiveFamilyId] = useState<string | null>(null);
 
-  // Текущая активная семья
-  const family = families.find((f) => f.id === activeFamilyId) || null;
+  // Текущая активная семья (case-insensitive)
+  const family = families.find((f) => f.id.toLowerCase() === activeFamilyId?.toLowerCase()) || null;
 
   // Активный пользователь (чистое состояние до входа)
   const [currentUser, setCurrentUser] = useState<DevUser>(EMPTY_USER);
@@ -211,6 +214,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   activeFamilyIdRef.current = activeFamilyId;
   const currentUserIdRef = React.useRef(currentUser.id);
   currentUserIdRef.current = currentUser.id;
+
+  const refreshEvents = async (famId?: string) => {
+    const targetFam = famId || activeFamilyIdRef.current;
+    try {
+      const cloudEvents = await EventsService.getEvents(targetFam || undefined);
+      if (Array.isArray(cloudEvents)) {
+        setEvents(
+          cloudEvents.map((e) => ({
+            id: String(e.id),
+            title: e.title,
+            date: e.eventDate,
+            emoji: e.icon || '🎉',
+            badgeBg: e.badgeBg || '#FFF0F4',
+            hasCart: e.hasCart,
+            isCompleted: e.isCompleted,
+            completedAt: e.completedAt,
+            familyId: e.familyId,
+          }))
+        );
+      }
+    } catch (e) {
+      console.warn('Failed to refresh events:', e);
+    }
+  };
 
   // Подключение к SignalR и синхронизация в реальном времени (корзина, статусы, семья, участники, мероприятия, свои товары)
   useEffect(() => {
@@ -259,27 +286,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         console.warn('Failed to load initial cart from cloud:', e);
       }
 
-      // 2. Загрузка мероприятий из облака
-      try {
-        const cloudEvents = await EventsService.getEvents(activeFamilyId);
-        if (Array.isArray(cloudEvents)) {
-          setEvents(
-            cloudEvents.map((e) => ({
-              id: String(e.id),
-              title: e.title,
-              date: e.eventDate,
-              emoji: e.icon || '🎉',
-              badgeBg: e.badgeBg || '#FFF0F4',
-              hasCart: e.hasCart,
-              isCompleted: e.isCompleted,
-              completedAt: e.completedAt,
-              familyId: e.familyId,
-            }))
-          );
-        }
-      } catch (e) {
-        console.warn('Failed to load events from cloud:', e);
-      }
+      // 2. Загрузка мероприятий из облака (Bug 3)
+      await refreshEvents(activeFamilyId);
 
       // 3. Загрузка пользовательских товаров для активной группы (Bug 9)
       try {
@@ -569,26 +577,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // 11. Подписка на создание, удаление и завершение мероприятий (Bug 4)
       unsubEventCreated = SignalRService.onEventCreated(async (data) => {
         if (data.familyId?.toLowerCase() === activeFamilyIdRef.current?.toLowerCase()) {
-          try {
-            const freshEvents = await EventsService.getEvents(activeFamilyIdRef.current);
-            if (Array.isArray(freshEvents)) {
-              setEvents(
-                freshEvents.map((e) => ({
-                  id: String(e.id),
-                  title: e.title,
-                  date: e.eventDate,
-                  emoji: e.icon || '🎉',
-                  badgeBg: e.badgeBg || '#FFF0F4',
-                  hasCart: e.hasCart,
-                  isCompleted: e.isCompleted,
-                  completedAt: e.completedAt,
-                  familyId: e.familyId,
-                }))
-              );
-            }
-          } catch (e) {
-            console.warn('Failed to refresh events on EventCreated:', e);
-          }
+          await refreshEvents(activeFamilyIdRef.current);
         }
       });
 
@@ -828,6 +817,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ...prev,
         [activeFam.id]: prev[activeFam.id] || {},
       }));
+      refreshEvents(activeFam.id).catch(() => {});
     } else {
       setActiveCartId('main');
     }
@@ -912,8 +902,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     try {
       await AuthService.updateProfile(trimmed);
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Cloud updateProfile failed:', e);
+      Alert.alert('Ошибка', e.message || 'Не удалось сохранить имя на сервере');
     }
   };
 
@@ -944,6 +935,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const userKey = `@product_basket_last_active_family_${currentUser.email.trim().toLowerCase()}`;
       Storage.setItem(userKey, target.id).catch(() => {});
     }
+    refreshEvents(target.id).catch(() => {});
   };
 
   // Создание новой семьи / группы
@@ -994,6 +986,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       Storage.setItem(userKey, familyId).catch(() => {});
     }
     SignalRService.joinFamily(familyId).catch((e) => console.warn('SignalR joinFamily failed:', e));
+    refreshEvents(familyId).catch(() => {});
 
     return newCode;
   };
@@ -1102,6 +1095,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         Storage.setItem('@product_basket_last_active_family', serverFam.familyId).catch(() => {});
         SignalRService.joinFamily(serverFam.familyId).catch((e) => console.warn('SignalR joinFamily failed:', e));
+        refreshEvents(serverFam.familyId).catch(() => {});
 
         return true;
       }
@@ -1481,7 +1475,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const targetFamId = (isEventCart && activeEvent?.familyId) ? activeEvent.familyId : activeFamilyId;
     if (targetFamId) {
+      const prodId = (item as any).productId ||
+        (!item.id.startsWith('cart-') && !item.id.startsWith('custom-') && item.id.includes('-') && item.id.length === 36
+          ? item.id
+          : undefined);
+
       CartService.addItem({
+        productId: prodId,
         title: item.title,
         unit: item.unit,
         imageKey: item.imageKey,
@@ -1918,6 +1918,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         toggleItemPurchased,
         totalCartItemsCount,
         events,
+        refreshEvents,
         createEvent,
         deleteEvent,
         createEventCart,

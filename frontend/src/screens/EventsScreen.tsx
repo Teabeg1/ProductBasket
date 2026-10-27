@@ -45,10 +45,15 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
     reopenEvent,
     families,
     activeFamilyId,
+    refreshEvents,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<EventFilterTab>('active');
   const [selectedSpaceFilter, setSelectedSpaceFilter] = useState<string>('all');
+
+  React.useEffect(() => {
+    refreshEvents(activeFamilyId || undefined);
+  }, [activeFamilyId]);
 
 
   // Фильтруем мероприятия: показываем только мероприятия групп, к которым текущий пользователь имеет доступ

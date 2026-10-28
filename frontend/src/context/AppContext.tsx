@@ -254,24 +254,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (famId) {
             const normFamId = famId.toLowerCase();
             const otherEvents = prev.filter(
-              (e) => e.familyId && e.familyId.toLowerCase() !== normFamId
+              (e) => !e.familyId || e.familyId.toLowerCase() !== normFamId
             );
             const map = new Map<string, AppEvent>();
             otherEvents.forEach((ev) => map.set(ev.id.toLowerCase(), ev));
             mapped.forEach((ev) => map.set(ev.id.toLowerCase(), ev));
             prev
-              .filter((e) => e.id.startsWith('event-') && e.familyId?.toLowerCase() === normFamId)
+              .filter((e) => (e.id.startsWith('evt-') || e.id.startsWith('event-')) && e.familyId?.toLowerCase() === normFamId)
               .forEach((ev) => {
-                if (!map.has(ev.id.toLowerCase())) map.set(ev.id.toLowerCase(), ev);
+                const alreadyInMapped = mapped.some(
+                  (m) =>
+                    m.id.toLowerCase() === ev.id.toLowerCase() ||
+                    (m.familyId?.toLowerCase() === ev.familyId?.toLowerCase() &&
+                      m.title.trim().toLowerCase() === ev.title.trim().toLowerCase())
+                );
+                if (!alreadyInMapped && !map.has(ev.id.toLowerCase())) {
+                  map.set(ev.id.toLowerCase(), ev);
+                }
               });
             return Array.from(map.values());
           } else {
             const map = new Map<string, AppEvent>();
             mapped.forEach((ev) => map.set(ev.id.toLowerCase(), ev));
             prev
-              .filter((e) => e.id.startsWith('event-'))
+              .filter((e) => e.id.startsWith('evt-') || e.id.startsWith('event-'))
               .forEach((ev) => {
-                if (!map.has(ev.id.toLowerCase())) map.set(ev.id.toLowerCase(), ev);
+                const alreadyInMapped = mapped.some(
+                  (m) =>
+                    m.id.toLowerCase() === ev.id.toLowerCase() ||
+                    (m.familyId?.toLowerCase() === ev.familyId?.toLowerCase() &&
+                      m.title.trim().toLowerCase() === ev.title.trim().toLowerCase())
+                );
+                if (!alreadyInMapped && !map.has(ev.id.toLowerCase())) {
+                  map.set(ev.id.toLowerCase(), ev);
+                }
               });
             return Array.from(map.values());
           }
@@ -579,12 +595,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         };
 
         const updateCustomList = (list: CatalogProduct[] = []): CatalogProduct[] => {
-          // If product with same ID already exists, update it
+          // If product with same ID already exists, update it and remove any matching temp item
           const byIdIdx = list.findIndex((p) => p.id.toLowerCase() === prodId);
           if (byIdIdx >= 0) {
             const next = [...list];
             next[byIdIdx] = newProduct;
-            return next;
+            return next.filter(
+              (p, idx) => idx === byIdIdx || !(p.id.startsWith('custom-') && p.title.trim().toLowerCase() === prodTitle.toLowerCase())
+            );
           }
           // If optimistic product exists with temp ID and same title, replace it
           const byTempIdx = list.findIndex(
@@ -593,7 +611,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (byTempIdx >= 0) {
             const next = [...list];
             next[byTempIdx] = newProduct;
-            return next;
+            return next.filter(
+              (p, idx) => idx === byTempIdx || !(p.id.startsWith('custom-') && p.title.trim().toLowerCase() === prodTitle.toLowerCase())
+            );
           }
           return [...list, newProduct];
         };
@@ -686,35 +706,47 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // 2. Загрузка мероприятий из облака (Bug 3)
       await refreshEvents();
 
-      // 3. Загрузка пользовательских товаров для активной группы (Bug 9)
+      // 3. Загрузка пользовательских товаров для всех групп пользователя (Bug 9)
       try {
-        const prods = await ProductsService.getProducts(activeFamilyId);
-        const customs = prods.filter((p: any) => p.familyId != null || p.isCustom || (p.category && p.category.includes('Свои')));
-        const mappedCustoms: CatalogProduct[] = customs.map((cp: any) => ({
-          id: String(cp.id),
-          title: cp.title,
-          unit: cp.unit || '1 шт',
-          emoji: cp.emoji || '🛍️',
-          imageKey: cp.imageKey || '',
-        }));
-        setFamilies((prev) =>
-          prev.map((f) =>
-            f.id.toLowerCase() === activeFamilyId.toLowerCase()
-              ? { ...f, customProducts: mappedCustoms }
-              : f
-          )
-        );
-        setKnownFamilies((prev) => {
-          const matchedKey = Object.keys(prev).find((k) => k.toLowerCase() === activeFamilyId.toLowerCase());
-          if (!matchedKey) return prev;
-          return {
-            ...prev,
-            [matchedKey]: {
-              ...prev[matchedKey],
-              customProducts: mappedCustoms,
-            },
-          };
-        });
+        const familiesToLoad = families.length > 0 ? families : (activeFamilyId ? [{ id: activeFamilyId }] : []);
+        for (const fam of familiesToLoad) {
+          if (!fam.id) continue;
+          const prods = await ProductsService.getProducts(fam.id);
+          const customs = prods.filter((p: any) => p.familyId != null || p.isCustom || (p.category && p.category.includes('Свои')));
+          const seen = new Set<string>();
+          const mappedCustoms: CatalogProduct[] = [];
+          for (const cp of customs) {
+            const normId = String(cp.id).toLowerCase();
+            if (!seen.has(normId)) {
+              seen.add(normId);
+              mappedCustoms.push({
+                id: normId,
+                title: cp.title,
+                unit: cp.unit || '1 шт',
+                emoji: cp.emoji || '🛍️',
+                imageKey: cp.imageKey || '',
+              });
+            }
+          }
+          setFamilies((prev) =>
+            prev.map((f) =>
+              f.id.toLowerCase() === fam.id.toLowerCase()
+                ? { ...f, customProducts: mappedCustoms }
+                : f
+            )
+          );
+          setKnownFamilies((prev) => {
+            const matchedKey = Object.keys(prev).find((k) => k.toLowerCase() === fam.id.toLowerCase());
+            if (!matchedKey) return prev;
+            return {
+              ...prev,
+              [matchedKey]: {
+                ...prev[matchedKey],
+                customProducts: mappedCustoms,
+              },
+            };
+          });
+        }
       } catch (e) {
         console.warn('Failed to load custom products in setupSignalR:', e);
       }
@@ -1029,6 +1061,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       Storage.setItem(userKey, target.id).catch(() => {});
     }
     refreshEvents().catch(() => {});
+
+    // Также подгружаем актуальные пользовательские товары для выбранной семьи
+    ProductsService.getProducts(target.id)
+      .then((prods) => {
+        const customs = prods.filter((p: any) => p.familyId != null || p.isCustom || (p.category && p.category.includes('Свои')));
+        const seen = new Set<string>();
+        const mappedCustoms: CatalogProduct[] = [];
+        for (const cp of customs) {
+          const normId = String(cp.id).toLowerCase();
+          if (!seen.has(normId)) {
+            seen.add(normId);
+            mappedCustoms.push({
+              id: normId,
+              title: cp.title,
+              unit: cp.unit || '1 шт',
+              emoji: cp.emoji || '🛍️',
+              imageKey: cp.imageKey || '',
+            });
+          }
+        }
+        setFamilies((prev) =>
+          prev.map((f) =>
+            f.id.toLowerCase() === target.id.toLowerCase()
+              ? { ...f, customProducts: mappedCustoms }
+              : f
+          )
+        );
+        setKnownFamilies((prev) => {
+          const matchedKey = Object.keys(prev).find((k) => k.toLowerCase() === target.id.toLowerCase());
+          if (!matchedKey) return prev;
+          return {
+            ...prev,
+            [matchedKey]: {
+              ...prev[matchedKey],
+              customProducts: mappedCustoms,
+            },
+          };
+        });
+      })
+      .catch(() => {});
   };
 
   // Создание новой семьи / группы
@@ -1396,11 +1468,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (created?.id) {
         const realId = String(created.id).toLowerCase();
         const reconcileList = (list: CatalogProduct[] = []): CatalogProduct[] => {
-          const alreadyHasReal = list.some((cp) => cp.id.toLowerCase() === realId);
-          if (alreadyHasReal) {
-            return list.filter((cp) => cp.id !== tempId);
+          const seen = new Set<string>();
+          const result: CatalogProduct[] = [];
+          for (const cp of list) {
+            const effectiveId = cp.id === tempId ? realId : cp.id.toLowerCase();
+            if (!seen.has(effectiveId)) {
+              seen.add(effectiveId);
+              result.push(cp.id === tempId ? { ...cp, id: realId } : cp);
+            }
           }
-          return list.map((cp) => (cp.id === tempId ? { ...cp, id: realId } : cp));
+          return result;
         };
 
         setFamilies((prev) =>

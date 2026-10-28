@@ -74,9 +74,18 @@ export const CartScreen: React.FC<CartScreenProps> = ({
   // Каталог товаров объединяет базовые товары, пользовательские товары и любые товары, уже находящиеся в корзине
   const rawCustomProducts = family?.customProducts || [];
   const seenCustomIds = new Set<string>();
+  const hasRealCustomWithTitle = (title: string) =>
+    rawCustomProducts.some(
+      (p) => !p.id.startsWith('custom-') && p.title.trim().toLowerCase() === title.trim().toLowerCase()
+    );
+
   const familyCustomProducts: CatalogProduct[] = [];
   rawCustomProducts.forEach((cp) => {
     const norm = cp.id.toLowerCase();
+    const cleanTitle = cp.title.trim().toLowerCase();
+    if (cp.id.startsWith('custom-') && hasRealCustomWithTitle(cleanTitle)) {
+      return;
+    }
     if (!seenCustomIds.has(norm)) {
       seenCustomIds.add(norm);
       familyCustomProducts.push(cp);
@@ -248,7 +257,9 @@ export const CartScreen: React.FC<CartScreenProps> = ({
               const targetCartId = activeCartItems[0]?.id || boughtCartItems[0]?.id || prod.id;
               const b64 = prod.imageKey ? PRODUCT_IMAGES[prod.imageKey] : null;
               const imageUri = b64 ? `data:image/jpeg;base64,${b64}` : null;
-              const isCustom = prod.id.startsWith('custom-');
+              const isCustom =
+                prod.id.startsWith('custom-') ||
+                familyCustomProducts.some((cp) => cp.id.toLowerCase() === prod.id.toLowerCase());
 
               return (
                 <View

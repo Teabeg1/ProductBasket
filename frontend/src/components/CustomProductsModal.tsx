@@ -29,9 +29,18 @@ export const CustomProductsModal: React.FC<CustomProductsModalProps> = ({
 
   const rawCustomProducts = family.customProducts || [];
   const seenIds = new Set<string>();
+  const hasRealItemWithTitle = (title: string) =>
+    rawCustomProducts.some(
+      (p) => !p.id.startsWith('custom-') && p.title.trim().toLowerCase() === title.trim().toLowerCase()
+    );
+
   const customProducts = rawCustomProducts.filter((prod) => {
     const norm = prod.id.toLowerCase();
+    const cleanTitle = prod.title.trim().toLowerCase();
     if (seenIds.has(norm)) return false;
+    if (prod.id.startsWith('custom-') && hasRealItemWithTitle(cleanTitle)) {
+      return false;
+    }
     seenIds.add(norm);
     return true;
   });

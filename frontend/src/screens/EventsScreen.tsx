@@ -231,7 +231,7 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
                     activeOpacity={0.7}
                     onPress={() => {
                       setSelectedSpaceFilter(fam.id);
-                      refreshEvents(fam.id).catch(() => {});
+                      refreshEvents().catch(() => {});
                     }}
                   >
                     <Users

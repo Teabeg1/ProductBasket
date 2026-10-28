@@ -52,7 +52,7 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
   const [selectedSpaceFilter, setSelectedSpaceFilter] = useState<string>('all');
 
   React.useEffect(() => {
-    refreshEvents(activeFamilyId || undefined);
+    refreshEvents();
   }, [activeFamilyId]);
 
 
@@ -195,7 +195,10 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
                     : { backgroundColor: colors.card, borderColor: colors.border },
                 ]}
                 activeOpacity={0.7}
-                onPress={() => setSelectedSpaceFilter('all')}
+                onPress={() => {
+                  setSelectedSpaceFilter('all');
+                  refreshEvents().catch(() => {});
+                }}
               >
                 <SlidersHorizontal
                   size={13}
@@ -226,7 +229,10 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
                         : { backgroundColor: colors.card, borderColor: colors.border },
                     ]}
                     activeOpacity={0.7}
-                    onPress={() => setSelectedSpaceFilter(fam.id)}
+                    onPress={() => {
+                      setSelectedSpaceFilter(fam.id);
+                      refreshEvents(fam.id).catch(() => {});
+                    }}
                   >
                     <Users
                       size={13}

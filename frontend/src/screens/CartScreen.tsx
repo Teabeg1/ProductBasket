@@ -72,7 +72,16 @@ export const CartScreen: React.FC<CartScreenProps> = ({
   const isEventCompleted = Boolean(isEventCart && currentEvent?.isCompleted);
 
   // Каталог товаров объединяет базовые товары, пользовательские товары и любые товары, уже находящиеся в корзине
-  const familyCustomProducts = family?.customProducts || [];
+  const rawCustomProducts = family?.customProducts || [];
+  const seenCustomIds = new Set<string>();
+  const familyCustomProducts: CatalogProduct[] = [];
+  rawCustomProducts.forEach((cp) => {
+    const norm = cp.id.toLowerCase();
+    if (!seenCustomIds.has(norm)) {
+      seenCustomIds.add(norm);
+      familyCustomProducts.push(cp);
+    }
+  });
   const catalogProducts: CatalogProduct[] = [...BASE_CATALOG_PRODUCTS, ...familyCustomProducts];
 
   const knownTitles = new Set(catalogProducts.map((p) => p.title.trim().toLowerCase()));
@@ -90,7 +99,16 @@ export const CartScreen: React.FC<CartScreenProps> = ({
       });
     }
   });
-  const displayCatalogProducts = [...catalogProducts, ...extraProducts];
+
+  const seenDisplayIds = new Set<string>();
+  const displayCatalogProducts: CatalogProduct[] = [];
+  [...catalogProducts, ...extraProducts].forEach((prod) => {
+    const norm = prod.id.toLowerCase();
+    if (!seenDisplayIds.has(norm)) {
+      seenDisplayIds.add(norm);
+      displayCatalogProducts.push(prod);
+    }
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

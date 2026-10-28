@@ -27,7 +27,14 @@ export const CustomProductsModal: React.FC<CustomProductsModalProps> = ({
 
   if (!family) return null;
 
-  const customProducts = family.customProducts || [];
+  const rawCustomProducts = family.customProducts || [];
+  const seenIds = new Set<string>();
+  const customProducts = rawCustomProducts.filter((prod) => {
+    const norm = prod.id.toLowerCase();
+    if (seenIds.has(norm)) return false;
+    seenIds.add(norm);
+    return true;
+  });
 
   const handleDeleteProduct = (productId: string, productTitle: string) => {
     Alert.alert(

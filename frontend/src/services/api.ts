@@ -343,11 +343,13 @@ export interface EventDto {
   membersCount: number;
 }
 
+const isGuid = (val?: string) => !!val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
 export const EventsService = {
   // Получение списка мероприятий (GET /api/events)
   async getEvents(familyId?: string): Promise<EventDto[]> {
     const token = await AuthService.getToken();
-    const url = familyId ? `${API_BASE_URL}/events?familyId=${familyId}` : `${API_BASE_URL}/events`;
+    const url = familyId && isGuid(familyId) ? `${API_BASE_URL}/events?familyId=${familyId}` : `${API_BASE_URL}/events`;
     const res = await fetch(url, {
       method: 'GET',
       headers: {
@@ -435,8 +437,8 @@ export const CartService = {
   async getCart(familyId?: string, eventId?: string): Promise<CartItemDto[]> {
     const token = await AuthService.getToken();
     const params = new URLSearchParams();
-    if (familyId) params.append('familyId', familyId);
-    if (eventId) params.append('eventId', eventId);
+    if (familyId && isGuid(familyId)) params.append('familyId', familyId);
+    if (eventId && isGuid(eventId)) params.append('eventId', eventId);
     const queryString = params.toString() ? `?${params.toString()}` : '';
 
     const res = await fetch(`${API_BASE_URL}/cart${queryString}`, {
@@ -461,18 +463,27 @@ export const CartService = {
     count?: number;
     familyId?: string;
     eventId?: string;
-  }): Promise<CartItemDto | null> {
+  }): Promise<CartItemDto> {
     const token = await AuthService.getToken();
+    const payload: any = { ...request };
+    if (payload.productId && !isGuid(payload.productId)) delete payload.productId;
+    if (payload.eventId && !isGuid(payload.eventId)) delete payload.eventId;
+    if (payload.familyId && !isGuid(payload.familyId)) delete payload.familyId;
+
     const res = await fetch(`${API_BASE_URL}/cart/items`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify(request),
+      body: JSON.stringify(payload),
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const err = await extractErrorMessage(res, 'Не удалось добавить товар в корзину');
+      console.warn('CartService.addItem error:', err);
+      throw new Error(err);
+    }
     return await res.json();
   },
 
@@ -539,7 +550,7 @@ export const ProductsService = {
   // Получение каталога товаров семьи (включая Свои товары) (GET /api/products?familyId=...)
   async getProducts(familyId?: string): Promise<any[]> {
     const token = await AuthService.getToken();
-    const url = familyId ? `${API_BASE_URL}/products?familyId=${familyId}` : `${API_BASE_URL}/products`;
+    const url = familyId && isGuid(familyId) ? `${API_BASE_URL}/products?familyId=${familyId}` : `${API_BASE_URL}/products`;
     const res = await fetch(url, {
       method: 'GET',
       headers: {

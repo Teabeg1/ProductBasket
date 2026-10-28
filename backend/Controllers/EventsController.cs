@@ -30,7 +30,7 @@ public class EventsController : ControllerBase
     /// Получение списка мероприятий семьи (или всех групп пользователя, если familyId не указан)
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult<List<EventDto>>> GetEvents([FromQuery] Guid? familyId)
+    public async Task<ActionResult<List<EventDto>>> GetEvents([FromQuery] string? familyId)
     {
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
@@ -48,13 +48,14 @@ public class EventsController : ControllerBase
             .Include(e => e.CartItems)
             .AsQueryable();
 
-        if (familyId.HasValue)
+        var hasParsed = Guid.TryParse(familyId, out var parsedFamilyId);
+        if (hasParsed)
         {
-            if (!myFamilyIds.Contains(familyId.Value))
+            if (!myFamilyIds.Contains(parsedFamilyId))
             {
                 return BadRequest(new { message = "Вы не являетесь участником указанной группы" });
             }
-            query = query.Where(e => e.FamilyId == familyId.Value);
+            query = query.Where(e => e.FamilyId == parsedFamilyId);
         }
         else
         {

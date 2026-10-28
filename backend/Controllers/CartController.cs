@@ -30,15 +30,18 @@ public class CartController : ControllerBase
     /// Получение товаров в корзине семьи или мероприятия
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult<List<CartItemDto>>> GetCartItems([FromQuery] Guid? familyId, [FromQuery] Guid? eventId)
+    public async Task<ActionResult<List<CartItemDto>>> GetCartItems([FromQuery] string? familyId, [FromQuery] string? eventId)
     {
         var userId = GetCurrentUserId();
         if (userId == null) return Unauthorized();
 
+        Guid? parsedEventId = Guid.TryParse(eventId, out var eGuid) ? eGuid : null;
+        Guid? parsedFamilyId = Guid.TryParse(familyId, out var fGuid) ? fGuid : null;
+
         Guid? targetFamilyId = null;
-        if (eventId.HasValue)
+        if (parsedEventId.HasValue)
         {
-            var ev = await _context.Events.FindAsync(eventId.Value);
+            var ev = await _context.Events.FindAsync(parsedEventId.Value);
             if (ev == null) return NotFound(new { message = "Мероприятие не найдено" });
             if (!await IsUserInFamilyAsync(userId.Value, ev.FamilyId))
             {
@@ -48,7 +51,7 @@ public class CartController : ControllerBase
         }
         else
         {
-            targetFamilyId = await ResolveFamilyIdAsync(userId.Value, familyId);
+            targetFamilyId = await ResolveFamilyIdAsync(userId.Value, parsedFamilyId);
         }
 
         if (targetFamilyId == null)
@@ -60,9 +63,9 @@ public class CartController : ControllerBase
             .Include(c => c.TakenByUser)
             .Where(c => c.FamilyId == targetFamilyId.Value);
 
-        if (eventId.HasValue)
+        if (parsedEventId.HasValue)
         {
-            query = query.Where(c => c.EventId == eventId.Value);
+            query = query.Where(c => c.EventId == parsedEventId.Value);
         }
         else
         {

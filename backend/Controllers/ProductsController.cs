@@ -30,11 +30,12 @@ public class ProductsController : ControllerBase
     /// Получение каталога товаров (базовые товары + пользовательские товары семьи)
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult<List<ProductDto>>> GetProducts([FromQuery] Guid? familyId)
+    public async Task<ActionResult<List<ProductDto>>> GetProducts([FromQuery] string? familyId)
     {
         var userId = GetCurrentUserId();
         var query = _context.Products.AsQueryable();
 
+        var hasFamilyId = Guid.TryParse(familyId, out var parsedFamilyId);
         if (userId.HasValue)
         {
             var myFamilyIds = await _context.FamilyMembers
@@ -42,11 +43,11 @@ public class ProductsController : ControllerBase
                 .Select(fm => fm.FamilyId)
                 .ToListAsync();
 
-            if (familyId.HasValue)
+            if (hasFamilyId)
             {
-                if (myFamilyIds.Contains(familyId.Value))
+                if (myFamilyIds.Contains(parsedFamilyId))
                 {
-                    query = query.Where(p => p.FamilyId == null || p.FamilyId == familyId.Value);
+                    query = query.Where(p => p.FamilyId == null || p.FamilyId == parsedFamilyId);
                 }
                 else
                 {

@@ -273,7 +273,7 @@ class SignalRManager {
 
     if (this.connection?.state === signalR.HubConnectionState.Connecting) {
       for (let i = 0; i < 25; i++) {
-        if (this.connection.state === signalR.HubConnectionState.Connected) break;
+        if ((this.connection.state as any) === signalR.HubConnectionState.Connected) break;
         await new Promise((r) => setTimeout(r, 200));
       }
     }

@@ -86,7 +86,7 @@ export const FamilySwitcherModal: React.FC<FamilySwitcherModalProps> = ({
                 showsVerticalScrollIndicator={false}
               >
                 {families.map((fam) => {
-                  const isActive = fam.id === activeFamilyId;
+                  const isActive = fam.id.toLowerCase() === activeFamilyId?.toLowerCase();
 
                   return (
                     <TouchableOpacity

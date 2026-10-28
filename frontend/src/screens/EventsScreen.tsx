@@ -214,8 +214,8 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
               </TouchableOpacity>
 
               {families.map((fam) => {
-                const isSelected = effectiveSpaceFilter === fam.id;
-                const count = userEvents.filter((e) => e.familyId === fam.id).length;
+                const isSelected = effectiveSpaceFilter.toLowerCase() === fam.id.toLowerCase();
+                const count = userEvents.filter((e) => e.familyId?.toLowerCase() === fam.id.toLowerCase()).length;
                 return (
                   <TouchableOpacity
                     key={fam.id}
@@ -337,8 +337,8 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
               <View style={styles.eventsList}>
                 {activeEvents.map((item) => {
                   const localStats = getEventCartStats(item.id);
-                  const hasCart = Boolean(item.hasCart || (item as any).cartStats?.total > 0 || localStats.total > 0);
-                  const stats = hasCart ? (localStats.total > 0 ? localStats : ((item as any).cartStats || localStats)) : null;
+                  const hasCart = Boolean(item.hasCart ?? true);
+                  const stats = localStats.total > 0 ? localStats : ((item as any).cartStats || localStats);
                   const allBought = stats && stats.total > 0 && stats.total === stats.bought;
                   const eventFamily = families.find((f) => f.id.toLowerCase() === item.familyId?.toLowerCase());
 

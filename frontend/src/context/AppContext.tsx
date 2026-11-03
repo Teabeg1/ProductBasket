@@ -44,15 +44,9 @@ export async function registerAndSavePushToken(): Promise<string | null> {
 
     let tokenData: Notifications.ExpoPushToken | null = null;
     try {
-      tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId: '7c1e34a6-4444-4e4b-9111-d07f354f3bfa',
-      });
-    } catch (e1) {
-      try {
-        tokenData = await Notifications.getExpoPushTokenAsync();
-      } catch (e2) {
-        console.warn('[PUSH] Could not get push token:', e1, e2);
-      }
+      tokenData = await Notifications.getExpoPushTokenAsync();
+    } catch (e) {
+      console.warn('[PUSH] Notifications.getExpoPushTokenAsync() error:', e);
     }
 
     if (tokenData?.data) {
@@ -134,6 +128,8 @@ interface AppContextType {
 
   // Active User & Auth
   currentUser: DevUser;
+  isInitialLoading: boolean;
+  setIsInitialLoading: (loading: boolean) => void;
   setCurrentUserByEmail: (email: string) => { user: DevUser; hasFamily: boolean };
   setCurrentUserFromAuth: (authData: AuthResponse) => Promise<{ user: DevUser; hasFamily: boolean }>;
   registerUser: (displayName: string, email: string) => void;
@@ -281,6 +277,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Активный пользователь (чистое состояние до входа)
   const [currentUser, setCurrentUser] = useState<DevUser>(EMPTY_USER);
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(false);
 
   // Хранилище корзин: ключом выступает familyId или eventId
   const [carts, setCarts] = useState<Record<string, Record<string, CartItem>>>({});
@@ -359,68 +356,72 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // Восстановление соединения и обновление корзины при возвращении приложения из фона (например, когда с ПК добавили товар, а пользователь вернулся в приложение на телефоне)
+  // Восстановление соединения и мгновенное обновление корзины при возвращении приложения из фона
   useEffect(() => {
     const subscription = AppState.addEventListener('change', async (nextState) => {
       if (nextState === 'active') {
         const famId = activeFamilyIdRef.current;
         const uId = currentUserIdRef.current;
         if (famId && uId) {
-          try {
-            const token = await AuthService.getToken();
+          // 1. Мгновенно подтягиваем актуальную корзину по HTTP, не дожидаясь SignalR сокета
+          CartService.getCart(famId)
+            .then((freshItems) => {
+              if (Array.isArray(freshItems)) {
+                const mapped: Record<string, CartItem> = {};
+                freshItems.forEach((c) => {
+                  const lowerId = c.id.toLowerCase();
+                  mapped[lowerId] = {
+                    id: lowerId,
+                    title: c.title,
+                    unit: c.unit,
+                    imageKey: c.imageKey || '',
+                    emoji: c.emoji || '📦',
+                    count: c.count,
+                    assignedToUserId: c.assignedToUserId ? c.assignedToUserId.toLowerCase() : (c.takenByUserId ? c.takenByUserId.toLowerCase() : null),
+                    isBought: c.isBought,
+                    addedByUserId: c.addedByUserId ? c.addedByUserId.toLowerCase() : null,
+                  };
+                });
+                setCarts((prev) => ({
+                  ...prev,
+                  [famId.toLowerCase()]: mapped,
+                }));
+              }
+            })
+            .catch((e) => console.warn('AppState resume cart fetch failed:', e));
+
+          // 2. Параллельно обновляем мероприятия и участников
+          refreshEvents(famId).catch(() => {});
+          FamilyService.getMembers(famId).then((cloudMembers) => {
+            if (Array.isArray(cloudMembers) && cloudMembers.length > 0) {
+              const mappedMembers = cloudMembers.map((m: any) => ({
+                id: String(m.id),
+                name: m.displayName || m.name || 'Участник',
+                email: m.email,
+                avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
+                avatarBg: m.avatarBg || '#FCE7F3',
+                avatarColor: m.avatarColor || '#9D174D',
+                familyId: famId,
+                familyName: m.familyName || '',
+              }));
+              setFamilies((prev) =>
+                prev.map((f) =>
+                  f.id.toLowerCase() === famId.toLowerCase() ? { ...f, members: mappedMembers } : f
+                )
+              );
+            }
+          }).catch(() => {});
+
+          // 3. Фоновое восстановление сокета SignalR (асинхронно, не блокируя UI)
+          AuthService.getToken().then(async (token) => {
             if (token) {
               await SignalRService.start().catch(() => {});
               await SignalRService.joinFamily(famId).catch(() => {});
             }
+          }).catch(() => {});
 
-            const freshItems = await CartService.getCart(famId).catch(() => null);
-            if (Array.isArray(freshItems)) {
-              const mapped: Record<string, CartItem> = {};
-              freshItems.forEach((c) => {
-                const lowerId = c.id.toLowerCase();
-                mapped[lowerId] = {
-                  id: lowerId,
-                  title: c.title,
-                  unit: c.unit,
-                  imageKey: c.imageKey || '',
-                  emoji: c.emoji || '📦',
-                  count: c.count,
-                  assignedToUserId: c.assignedToUserId ? c.assignedToUserId.toLowerCase() : (c.takenByUserId ? c.takenByUserId.toLowerCase() : null),
-                  isBought: c.isBought,
-                  addedByUserId: c.addedByUserId ? c.addedByUserId.toLowerCase() : null,
-                };
-              });
-              setCarts((prev) => ({
-                ...prev,
-                [famId.toLowerCase()]: mapped,
-              }));
-            }
-
-            refreshEvents(famId).catch(() => {});
-            FamilyService.getMembers(famId).then((cloudMembers) => {
-              if (Array.isArray(cloudMembers) && cloudMembers.length > 0) {
-                const mappedMembers = cloudMembers.map((m: any) => ({
-                  id: String(m.id),
-                  name: m.displayName || m.name || 'Участник',
-                  email: m.email,
-                  avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
-                  avatarBg: m.avatarBg || '#FCE7F3',
-                  avatarColor: m.avatarColor || '#9D174D',
-                  familyId: famId,
-                  familyName: m.familyName || '',
-                }));
-                setFamilies((prev) =>
-                  prev.map((f) =>
-                    f.id.toLowerCase() === famId.toLowerCase() ? { ...f, members: mappedMembers } : f
-                  )
-                );
-              }
-            }).catch(() => {});
-
-            registerAndSavePushToken().catch(() => {});
-          } catch (e) {
-            console.warn('AppState resume sync failed:', e);
-          }
+          // 4. Регистрация push-токена в фоне
+          registerAndSavePushToken().catch(() => {});
         }
       }
     });
@@ -1063,22 +1064,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       familyName: activeFam ? activeFam.name : null,
     };
 
-    setFamilies(userFamilies);
-    setKnownFamilies((prev) => {
-      const updated = { ...prev };
-      userFamilies.forEach((f) => {
-        updated[f.id] = f;
-      });
-      return updated;
-    });
-
-    setActiveFamilyId(activeFam ? activeFam.id : null);
-    setCurrentUser(loggedUser);
+    setIsInitialLoading(true);
+    let initialMappedCart: Record<string, CartItem> = {};
 
     if (activeFam) {
       Storage.setItem('@product_basket_last_active_family', activeFam.id).catch(() => {});
       Storage.setItem(`@product_basket_last_active_family_${cleanEmail}`, activeFam.id).catch(() => {});
-      setActiveCartId(activeFam.id);
 
       // Полная предварительная загрузка корзины, участников и мероприятий ПЕРЕД завершением входа,
       // чтобы пользователь не видел мерцающий экран с задержкой появления товаров и ролей
@@ -1097,25 +1088,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
             avatarBg: m.avatarBg || '#FCE7F3',
             avatarColor: m.avatarColor || '#9D174D',
-            familyId: activeFam.id,
-            familyName: activeFam.name,
+            familyId: activeFam!.id,
+            familyName: activeFam!.name,
           }));
           activeFam.members = mappedMembers;
           userFamilies = userFamilies.map((f) =>
             f.id.toLowerCase() === activeFam!.id.toLowerCase() ? { ...f, members: mappedMembers } : f
           );
-          setFamilies(userFamilies);
-          setKnownFamilies((prev) => ({
-            ...prev,
-            [activeFam!.id]: { ...activeFam!, members: mappedMembers },
-          }));
         }
 
-        const mappedCart: Record<string, CartItem> = {};
         if (Array.isArray(cloudItems)) {
           cloudItems.forEach((c) => {
             const lowerId = c.id.toLowerCase();
-            mappedCart[lowerId] = {
+            initialMappedCart[lowerId] = {
               id: lowerId,
               title: c.title,
               unit: c.unit,
@@ -1128,25 +1113,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             };
           });
         }
-
-        const targetCartKey = activeFam.id.toLowerCase();
-        setCarts((prev) => ({
-          ...prev,
-          [targetCartKey]: mappedCart,
-        }));
-
-        if (authData.token) {
-          await SignalRService.start().catch(() => {});
-          await SignalRService.joinFamily(activeFam.id).catch(() => {});
-        }
       } catch (loadErr) {
         console.warn('Preloading family data failed:', loadErr);
       }
-    } else {
-      setActiveCartId('main');
+    }
+
+    if (activeFam) {
+      const targetCartKey = activeFam.id.toLowerCase();
+      setCarts((prev) => ({
+        ...prev,
+        [targetCartKey]: initialMappedCart,
+      }));
+    }
+
+    setFamilies(userFamilies);
+    setKnownFamilies((prev) => {
+      const updated = { ...prev };
+      userFamilies.forEach((f) => {
+        updated[f.id] = f;
+      });
+      return updated;
+    });
+
+    setActiveFamilyId(activeFam ? activeFam.id : null);
+    setActiveCartId(activeFam ? activeFam.id : 'main');
+    setCurrentUser(loggedUser);
+
+    if (activeFam && authData.token) {
+      SignalRService.start().then(() => {
+        SignalRService.joinFamily(activeFam!.id).catch(() => {});
+      }).catch(() => {});
     }
 
     registerAndSavePushToken().catch(() => {});
+    setIsInitialLoading(false);
     return { user: loggedUser, hasFamily };
   };
 
@@ -1182,6 +1182,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setEvents([]);
     setKnownFamilies({});
     setActiveCartId('main');
+    setIsInitialLoading(false);
   };
 
   const updateUserName = async (name: string): Promise<void> => {
@@ -1982,6 +1983,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let serverTargetId = itemId;
     const uId = currentUser.id?.toLowerCase();
 
+    let targetFound = false;
+
     setCarts((prev) => {
       const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || currentKey;
       const currentCart = { ...(prev[cartKey] || {}) };
@@ -1990,10 +1993,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       let realKey = Object.keys(currentCart).find((k) => {
         const c = currentCart[k];
         const cAdded = c.addedByUserId?.toLowerCase();
-        const isAuthorMember = !cAdded || family?.members.some((m) => m.id.toLowerCase() === cAdded);
-        const canManage = cAdded === uId || !isAuthorMember;
+        if (c.isBought) return false;
+
+        const isMine = !cAdded || cAdded === uId;
+        const hasMembers = Boolean(family?.members && family.members.length > 0);
+        const isAuthorStillMember = hasMembers && cAdded && family!.members.some((m) => m.id.toLowerCase() === cAdded);
+        const canManage = isMine || (hasMembers && !isAuthorStillMember);
+
         return (
-          !c.isBought &&
           canManage &&
           (k.toLowerCase() === itemId.toLowerCase() ||
             c.id.toLowerCase() === itemId.toLowerCase() ||
@@ -2001,13 +2008,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         );
       });
 
-      // Fallback ТОЛЬКО по точному GUID/ключу конкретной записи своего товара (не по названию, чтобы не списать купленный товар!)
+      // Fallback ТОЛЬКО по точному GUID/ключу конкретной записи своего товара
       if (!realKey) {
         realKey = Object.keys(currentCart).find((k) => {
           const c = currentCart[k];
           const cAdded = c.addedByUserId?.toLowerCase();
-          const isAuthorMember = !cAdded || family?.members.some((m) => m.id.toLowerCase() === cAdded);
-          const canManage = cAdded === uId || !isAuthorMember;
+          const isMine = !cAdded || cAdded === uId;
+          const hasMembers = Boolean(family?.members && family.members.length > 0);
+          const isAuthorStillMember = hasMembers && cAdded && family!.members.some((m) => m.id.toLowerCase() === cAdded);
+          const canManage = isMine || (hasMembers && !isAuthorStillMember);
+
           return (
             canManage &&
             (k.toLowerCase() === itemId.toLowerCase() ||
@@ -2017,6 +2027,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       if (!realKey) return prev;
+      targetFound = true;
 
       const existing = currentCart[realKey];
       serverTargetId = existing.id;
@@ -2033,8 +2044,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     });
 
-    CartService.decrementItem(serverTargetId).catch((e) => {
+    if (!targetFound) {
+      Alert.alert(
+        'Ограничение',
+        'Вы можете уменьшать только то количество товара, которое добавили лично вы.'
+      );
+      return;
+    }
+
+    CartService.decrementItem(serverTargetId).catch((e: any) => {
       console.warn('Cloud sync decrement failed:', e);
+      Alert.alert('Ограничение', e.message || 'Вы можете уменьшать только те товары, которые добавили лично вы.');
       const targetFam = (isEventCart && activeEvent?.familyId) ? activeEvent.familyId : activeFamilyId;
       if (targetFam) {
         CartService.getCart(targetFam, isEventCart ? activeCartId : undefined).then((fresh) => {
@@ -2073,6 +2093,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let serverTargetId = itemId;
     const uId = currentUser.id?.toLowerCase();
 
+    let targetFound = false;
+
     setCarts((prev) => {
       const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || currentKey;
       const currentCart = { ...(prev[cartKey] || {}) };
@@ -2081,10 +2103,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       let realKey = Object.keys(currentCart).find((k) => {
         const c = currentCart[k];
         const cAdded = c.addedByUserId?.toLowerCase();
-        const isAuthorMember = !cAdded || family?.members.some((m) => m.id.toLowerCase() === cAdded);
-        const canManage = cAdded === uId || !isAuthorMember;
+        if (c.isBought) return false;
+
+        const isMine = !cAdded || cAdded === uId;
+        const hasMembers = Boolean(family?.members && family.members.length > 0);
+        const isAuthorStillMember = hasMembers && cAdded && family!.members.some((m) => m.id.toLowerCase() === cAdded);
+        const canManage = isMine || (hasMembers && !isAuthorStillMember);
+
         return (
-          !c.isBought &&
           canManage &&
           (k.toLowerCase() === itemId.toLowerCase() ||
             c.id.toLowerCase() === itemId.toLowerCase() ||
@@ -2097,8 +2123,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         realKey = Object.keys(currentCart).find((k) => {
           const c = currentCart[k];
           const cAdded = c.addedByUserId?.toLowerCase();
-          const isAuthorMember = !cAdded || family?.members.some((m) => m.id.toLowerCase() === cAdded);
-          const canManage = cAdded === uId || !isAuthorMember;
+          const isMine = !cAdded || cAdded === uId;
+          const hasMembers = Boolean(family?.members && family.members.length > 0);
+          const isAuthorStillMember = hasMembers && cAdded && family!.members.some((m) => m.id.toLowerCase() === cAdded);
+          const canManage = isMine || (hasMembers && !isAuthorStillMember);
+
           return (
             canManage &&
             (k.toLowerCase() === itemId.toLowerCase() ||
@@ -2108,6 +2137,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       if (!realKey) return prev;
+      targetFound = true;
 
       serverTargetId = currentCart[realKey].id;
       delete currentCart[realKey];
@@ -2118,8 +2148,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     });
 
-    CartService.deleteItem(serverTargetId).catch((e) => {
+    if (!targetFound) {
+      Alert.alert(
+        'Ограничение',
+        'Вы можете удалять только то количество товара, которое добавили лично вы.'
+      );
+      return;
+    }
+
+    CartService.deleteItem(serverTargetId).catch((e: any) => {
       console.warn('Cloud sync delete failed:', e);
+      Alert.alert('Ограничение', e.message || 'Вы можете удалять только те товары, которые добавили лично вы.');
       const targetFam = (isEventCart && activeEvent?.familyId) ? activeEvent.familyId : activeFamilyId;
       if (targetFam) {
         CartService.getCart(targetFam, isEventCart ? activeCartId : undefined).then((fresh) => {
@@ -2414,6 +2453,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         language,
         t,
         currentUser,
+        isInitialLoading,
+        setIsInitialLoading,
         setCurrentUserByEmail,
         setCurrentUserFromAuth,
         registerUser,

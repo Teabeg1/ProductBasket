@@ -533,23 +533,31 @@ export const CartService = {
   // Уменьшение количества товара (POST /api/cart/items/{id}/decrement)
   async decrementItem(cartItemId: string): Promise<void> {
     const token = await AuthService.getToken();
-    await fetch(`${API_BASE_URL}/cart/items/${cartItemId}/decrement`, {
+    const res = await fetch(`${API_BASE_URL}/cart/items/${cartItemId}/decrement`, {
       method: 'POST',
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
+    if (!res.ok) {
+      const errorMsg = await extractErrorMessage(res, 'Не удалось уменьшить количество товара');
+      throw new Error(errorMsg);
+    }
   },
 
   // Удаление товара из корзины (DELETE /api/cart/items/{id})
   async deleteItem(cartItemId: string): Promise<void> {
     const token = await AuthService.getToken();
-    await fetch(`${API_BASE_URL}/cart/items/${cartItemId}`, {
+    const res = await fetch(`${API_BASE_URL}/cart/items/${cartItemId}`, {
       method: 'DELETE',
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
+    if (!res.ok) {
+      const errorMsg = await extractErrorMessage(res, 'Не удалось удалить товар');
+      throw new Error(errorMsg);
+    }
   },
 
   // Назначение ответственного «Куплю я» (POST /api/cart/{id}/assign)

@@ -66,12 +66,12 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
   const totalCount = itemsList.length;
 
   const myCount = itemsList.filter((item) => item.assignedToUserId?.toLowerCase() === currentUser.id?.toLowerCase()).length;
-  const unassignedCount = itemsList.filter((item) => item.assignedToUserId === null).length;
+  const unassignedCount = itemsList.filter((item) => !item.assignedToUserId).length;
   const boughtCount = itemsList.filter((item) => item.isBought).length;
 
   const filteredItems = itemsList.filter((item) => {
     if (filterTab === 'mine') return item.assignedToUserId?.toLowerCase() === currentUser.id?.toLowerCase();
-    if (filterTab === 'unassigned') return item.assignedToUserId === null;
+    if (filterTab === 'unassigned') return !item.assignedToUserId;
     if (filterTab === 'bought') return !!item.isBought;
     return true;
   });

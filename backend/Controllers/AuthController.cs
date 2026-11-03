@@ -121,6 +121,9 @@ public class AuthController : ControllerBase
         user.ExpoPushToken = request.PushToken.Trim();
         await _context.SaveChangesAsync();
 
+        _logger.LogInformation("[PUSH] Registered push token for user {UserId} ({Email}): {Token}",
+            user.Id, user.Email, user.ExpoPushToken);
+
         return Ok(new { success = true });
     }
 

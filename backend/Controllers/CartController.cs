@@ -743,6 +743,9 @@ public class CartController : ControllerBase
             .Select(fm => fm.User.ExpoPushToken!)
             .ToListAsync();
 
+        _logger.LogInformation("[PUSH] NotifyMembersItemAddedAsync for family {FamilyId}: found {Count} other member tokens (current user: {UserId})",
+            familyId, otherTokens.Count, currentUserId);
+
         if (otherTokens.Count > 0)
         {
             var eventTitle = eventId.HasValue ? (await _context.Events.FindAsync(eventId.Value))?.Title : null;
@@ -750,6 +753,8 @@ public class CartController : ControllerBase
             var pushBody = !string.IsNullOrEmpty(eventTitle)
                 ? $"В мероприятие «{eventTitle}» добавлен новый товар: {itemTitle}"
                 : $"В корзину добавлен новый товар: {itemTitle}";
+
+            _logger.LogInformation("[PUSH] Dispatching item_added push to {Count} recipients for item '{Title}'", otherTokens.Count, itemTitle);
 
             await _pushService.SendPushNotificationAsync(otherTokens, pushTitle, pushBody, new
             {

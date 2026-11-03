@@ -124,6 +124,41 @@ public class FamilyTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
+    public async Task LeaveFamily_ResetsAssignedProductsToUnassigned_DoesNotDeleteCartItems()
+    {
+        var (userAClient, userAAuth) = await CreateAuthenticatedUserAsync("UserA_Leave");
+        var famRes = await userAClient.PostAsJsonAsync("/api/family/create", new CreateFamilyRequest { Name = "FamLeave" });
+        var family = await famRes.Content.ReadFromJsonAsync<FamilyResponse>();
+
+        var (userBClient, userBAuth) = await CreateAuthenticatedUserAsync("UserB_Leave");
+        await userBClient.PostAsJsonAsync("/api/family/join", new JoinFamilyRequest { InviteCode = family!.InviteCode });
+
+        // User B добавляет товар и берет его себе
+        var addRes = await userBClient.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = family.FamilyId,
+            Title = "Вафли",
+            Unit = "200 г"
+        });
+        var item = await addRes.Content.ReadFromJsonAsync<CartItemDto>();
+        await userBClient.PostAsync($"/api/cart/{item!.Id}/take", null);
+
+        // User B добровольно выходит из семьи
+        var leaveRes = await userBClient.PostAsync($"/api/family/{family.FamilyId}/leave", null);
+        Assert.Equal(HttpStatusCode.OK, leaveRes.StatusCode);
+
+        // У оставшегося участника (User A) товар НЕ удален, статус сброшен в "Pending", AssignedToUserId == null, IsBought == false
+        var cartRes = await userAClient.GetAsync($"/api/cart?familyId={family.FamilyId}");
+        var cartItems = await cartRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.NotNull(cartItems);
+        var remaining = Assert.Single(cartItems);
+        Assert.Equal(item.Id, remaining.Id);
+        Assert.Null(remaining.AssignedToUserId);
+        Assert.Equal("Pending", remaining.Status);
+        Assert.False(remaining.IsBought);
+    }
+
+    [Fact]
     public async Task JoinFamily_RepeatedCalls_ReturnsOkIdempotent()
     {
         var (creatorClient, _) = await CreateAuthenticatedUserAsync("CreatorIdemp");

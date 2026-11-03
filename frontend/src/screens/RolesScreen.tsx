@@ -65,13 +65,24 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
   const itemsList = Object.values(cartItems);
   const totalCount = itemsList.length;
 
+  const isItemUnassigned = (item: { assignedToUserId: string | null; isBought?: boolean }) => {
+    if (!item.assignedToUserId) return true;
+    if (family?.members && family.members.length > 0) {
+      const isMember = family.members.some(
+        (m) => m.id.toLowerCase() === item.assignedToUserId?.toLowerCase()
+      );
+      if (!isMember) return true;
+    }
+    return false;
+  };
+
   const myCount = itemsList.filter((item) => item.assignedToUserId?.toLowerCase() === currentUser.id?.toLowerCase()).length;
-  const unassignedCount = itemsList.filter((item) => !item.assignedToUserId).length;
+  const unassignedCount = itemsList.filter((item) => isItemUnassigned(item)).length;
   const boughtCount = itemsList.filter((item) => item.isBought).length;
 
   const filteredItems = itemsList.filter((item) => {
     if (filterTab === 'mine') return item.assignedToUserId?.toLowerCase() === currentUser.id?.toLowerCase();
-    if (filterTab === 'unassigned') return !item.assignedToUserId;
+    if (filterTab === 'unassigned') return isItemUnassigned(item);
     if (filterTab === 'bought') return !!item.isBought;
     return true;
   });
@@ -456,7 +467,8 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
               const b64 = item.imageKey ? PRODUCT_IMAGES[item.imageKey] : null;
               const imageUri = b64 ? `data:image/jpeg;base64,${b64}` : null;
               const isAssignedToMe = !!item.assignedToUserId && item.assignedToUserId.toLowerCase() === currentUser.id.toLowerCase();
-              const isAssignedToOther = !!item.assignedToUserId && !isAssignedToMe;
+              const isUnassigned = isItemUnassigned(item);
+              const isAssignedToOther = !isAssignedToMe && !isUnassigned;
               const assignedUser = family?.members.find((m) => m.id.toLowerCase() === item.assignedToUserId?.toLowerCase());
 
               return (

@@ -258,19 +258,8 @@ export const CartScreen: React.FC<CartScreenProps> = ({
               const inCartItem = activeCartItems[0] || boughtCartItems[0] || cartItems[prod.id];
               const isBought = count === 0 && boughtCount > 0;
               // Изоляция владения добавленным количеством (Sprint 4 Block 4.2)
-              const myActiveItems = activeCartItems.filter((it) => {
-                const uId = currentUser.id?.toLowerCase();
-                const itemAuthorId = it.addedByUserId?.toLowerCase();
-                if (!itemAuthorId) {
-                  return true;
-                }
-                if (itemAuthorId === uId) {
-                  return true;
-                }
-                const hasMembers = Boolean(family?.members && family.members.length > 0);
-                const isAuthorStillMember = hasMembers && family!.members.some((m) => m.id.toLowerCase() === itemAuthorId);
-                return hasMembers && !isAuthorStillMember;
-              });
+              const uId = currentUser.id?.toLowerCase();
+              const myActiveItems = activeCartItems.filter((it) => it.addedByUserId?.toLowerCase() === uId);
               const myCount = myActiveItems.reduce((sum, it) => sum + it.count, 0);
               const myTargetCartId = myActiveItems[0]?.id || null;
               const targetCartId = myTargetCartId;
@@ -369,14 +358,19 @@ export const CartScreen: React.FC<CartScreenProps> = ({
                   {/* Add Button or Counter */}
                   {isEventCompleted ? (
                     count > 0 ? (
-                      <View
-                        style={[
-                          styles.counterBox,
-                          { backgroundColor: colors.cardSecondary, paddingHorizontal: 10 },
-                        ]}
-                      >
-                        <Text style={[styles.counterValue, { color: colors.textSecondary }]}>
-                          {count} шт
+                      <View style={styles.actionColWrapper}>
+                        <View
+                          style={[
+                            styles.counterBox,
+                            { backgroundColor: colors.cardSecondary, paddingHorizontal: 10 },
+                          ]}
+                        >
+                          <Text style={[styles.counterValue, { color: colors.textSecondary }]}>
+                            {count} шт
+                          </Text>
+                        </View>
+                        <Text style={[styles.myShareText, { color: colors.textSecondary }]}>
+                          (ваших: {myCount})
                         </Text>
                       </View>
                     ) : null
@@ -389,57 +383,70 @@ export const CartScreen: React.FC<CartScreenProps> = ({
                       <Plus size={18} color={colors.primary} strokeWidth={2.8} />
                     </TouchableOpacity>
                   ) : (
-                    <View style={styles.actionCol}>
-                      <TouchableOpacity
-                        style={[
-                          styles.trashBtn,
-                          { backgroundColor: colors.errorLight, opacity: myCount > 0 ? 1 : 0.4 },
-                        ]}
-                        activeOpacity={0.7}
-                        onPress={() => {
-                          if (myCount > 0 && myTargetCartId) {
-                            deleteFromCart(myTargetCartId);
-                          } else {
-                            Alert.alert(
-                              'Ограничение',
-                              'Вы можете удалять только то количество товара, которое добавили лично вы.'
-                            );
-                          }
-                        }}
-                      >
-                        <Trash2 size={13} color={colors.error} />
-                      </TouchableOpacity>
-                      <View
-                        style={[
-                          styles.counterBox,
-                          { backgroundColor: colors.primaryLight },
-                        ]}
-                      >
+                    <View style={styles.actionColWrapper}>
+                      <View style={styles.actionCol}>
                         <TouchableOpacity
-                          style={[styles.counterBtn, { opacity: myCount > 0 ? 1 : 0.4 }]}
+                          disabled={myCount === 0}
+                          style={[
+                            styles.trashBtn,
+                            {
+                              backgroundColor: colors.errorLight,
+                              opacity: myCount > 0 ? 1 : 0.25,
+                              pointerEvents: myCount > 0 ? 'auto' : 'none',
+                            },
+                          ]}
+                          activeOpacity={0.7}
                           onPress={() => {
                             if (myCount > 0 && myTargetCartId) {
-                              decrementCartItem(myTargetCartId);
-                            } else {
-                              Alert.alert(
-                                'Ограничение',
-                                'Вы можете уменьшать только то количество товара, которое добавили лично вы.'
-                              );
+                              deleteFromCart(myTargetCartId);
                             }
                           }}
                         >
-                          <Minus size={12} color={colors.primary} strokeWidth={2.5} />
+                          <Trash2 size={13} color={colors.error} />
                         </TouchableOpacity>
-                        <Text style={[styles.counterValue, { color: colors.primary }]}>
-                          {count}
-                        </Text>
-                        <TouchableOpacity
-                          style={styles.counterBtn}
-                          onPress={() => addToCart(prod)}
+                        <View
+                          style={[
+                            styles.counterBox,
+                            { backgroundColor: colors.primaryLight },
+                          ]}
                         >
-                          <Plus size={12} color={colors.primary} strokeWidth={2.5} />
-                        </TouchableOpacity>
+                          <TouchableOpacity
+                            disabled={myCount === 0}
+                            style={[
+                              styles.counterBtn,
+                              {
+                                opacity: myCount > 0 ? 1 : 0.25,
+                                pointerEvents: myCount > 0 ? 'auto' : 'none',
+                              },
+                            ]}
+                            onPress={() => {
+                              if (myCount > 0 && myTargetCartId) {
+                                decrementCartItem(myTargetCartId);
+                              }
+                            }}
+                          >
+                            <Minus size={12} color={colors.primary} strokeWidth={2.5} />
+                          </TouchableOpacity>
+                          <Text style={[styles.counterValue, { color: colors.primary }]}>
+                            {count}
+                          </Text>
+                          <TouchableOpacity
+                            style={styles.counterBtn}
+                            onPress={() => addToCart(prod)}
+                          >
+                            <Plus size={12} color={colors.primary} strokeWidth={2.5} />
+                          </TouchableOpacity>
+                        </View>
                       </View>
+                      <Text
+                        style={[
+                          styles.myShareText,
+                          { color: myCount > 0 ? colors.primary : colors.textSecondary },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        (ваших: {myCount})
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -672,7 +679,7 @@ const styles = StyleSheet.create({
   },
   infoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginTop: 8,
     paddingHorizontal: 2,
@@ -695,6 +702,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  actionColWrapper: {
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
   },
   actionCol: {
     flexDirection: 'row',
@@ -722,9 +733,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   counterValue: {
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '800',
     marginHorizontal: 4,
+  },
+  myShareText: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 3,
   },
   emptyContainer: {
     flex: 1,

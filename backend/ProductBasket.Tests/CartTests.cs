@@ -701,6 +701,50 @@ public class CartTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Cart_DeleteOwnShare_LeavesOtherUserShareIntact()
+    {
+        var (clientA, clientB, familyId) = await SetupFamilyWithTwoUsersAsync();
+
+        // 1. User 1 (Alice) adds 4 mayonnaise
+        var addResA = await clientA.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Майонез",
+            Count = 4
+        });
+        var itemA = await addResA.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(itemA);
+
+        // 2. User 2 (Bob) adds 2 mayonnaise
+        var addResB = await clientB.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Майонез",
+            Count = 2
+        });
+        var itemB = await addResB.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(itemB);
+
+        // 3. Total count in cart is 6
+        var listRes = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var items = await listRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.NotNull(items);
+        Assert.Equal(6, items.Sum(i => i.Count));
+
+        // 4. Bob deletes his own item directly (red trash button on Bob's client)
+        var delResB = await clientB.DeleteAsync($"/api/cart/items/{itemB.Id}");
+        Assert.Equal(HttpStatusCode.OK, delResB.StatusCode);
+
+        // 5. Alice's 4 mayonnaise remain in the cart intact, total count is now 4!
+        var afterDelRes = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var afterDelItems = await afterDelRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.NotNull(afterDelItems);
+        var remaining = Assert.Single(afterDelItems);
+        Assert.Equal(itemA.Id, remaining.Id);
+        Assert.Equal(4, remaining.Count);
+    }
+
+    [Fact]
     public async Task Auth_UpdatePushToken_Succeeds()
     {
         var (client, _) = await CreateAuthenticatedUserAsync("PushUser");

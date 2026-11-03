@@ -2039,6 +2039,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const currentKey = effectiveCartId;
     let serverTargetId = itemId;
     const uId = currentUser.id?.toLowerCase();
+    if (!uId) return;
 
     let targetFound = false;
 
@@ -2046,42 +2047,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || currentKey;
       const currentCart = { ...(prev[cartKey] || {}) };
 
-      // Ищем сначала НЕКУПЛЕННЫЙ товар, принадлежащий текущему пользователю (или если автор покинул группу)
-      let realKey = Object.keys(currentCart).find((k) => {
+      // Ищем НЕКУПЛЕННЫЙ товар, строго принадлежащий текущему пользователю (c.addedByUserId === currentUser.id)
+      const realKey = Object.keys(currentCart).find((k) => {
         const c = currentCart[k];
         const cAdded = c.addedByUserId?.toLowerCase();
         if (c.isBought) return false;
-
-        const isMine = !cAdded || cAdded === uId;
-        const hasMembers = Boolean(family?.members && family.members.length > 0);
-        const isAuthorStillMember = hasMembers && cAdded && family!.members.some((m) => m.id.toLowerCase() === cAdded);
-        const canManage = isMine || (hasMembers && !isAuthorStillMember);
+        if (cAdded !== uId) return false;
 
         return (
-          canManage &&
-          (k.toLowerCase() === itemId.toLowerCase() ||
-            c.id.toLowerCase() === itemId.toLowerCase() ||
-            c.title.trim().toLowerCase() === itemId.trim().toLowerCase())
+          k.toLowerCase() === itemId.toLowerCase() ||
+          c.id.toLowerCase() === itemId.toLowerCase() ||
+          c.title.trim().toLowerCase() === itemId.trim().toLowerCase()
         );
       });
-
-      // Fallback ТОЛЬКО по точному GUID/ключу конкретной записи своего товара
-      if (!realKey) {
-        realKey = Object.keys(currentCart).find((k) => {
-          const c = currentCart[k];
-          const cAdded = c.addedByUserId?.toLowerCase();
-          const isMine = !cAdded || cAdded === uId;
-          const hasMembers = Boolean(family?.members && family.members.length > 0);
-          const isAuthorStillMember = hasMembers && cAdded && family!.members.some((m) => m.id.toLowerCase() === cAdded);
-          const canManage = isMine || (hasMembers && !isAuthorStillMember);
-
-          return (
-            canManage &&
-            (k.toLowerCase() === itemId.toLowerCase() ||
-              c.id.toLowerCase() === itemId.toLowerCase())
-          );
-        });
-      }
 
       if (!realKey) return prev;
       targetFound = true;
@@ -2102,16 +2080,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     if (!targetFound) {
-      Alert.alert(
-        'Ограничение',
-        'Вы можете уменьшать только то количество товара, которое добавили лично вы.'
-      );
       return;
     }
 
     CartService.decrementItem(serverTargetId).catch((e: any) => {
       console.warn('Cloud sync decrement failed:', e);
-      Alert.alert('Ограничение', e.message || 'Вы можете уменьшать только те товары, которые добавили лично вы.');
       const targetFam = (isEventCart && activeEvent?.familyId) ? activeEvent.familyId : activeFamilyId;
       if (targetFam) {
         CartService.getCart(targetFam, isEventCart ? activeCartId : undefined).then((fresh) => {
@@ -2149,6 +2122,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const currentKey = effectiveCartId;
     let serverTargetId = itemId;
     const uId = currentUser.id?.toLowerCase();
+    if (!uId) return;
 
     let targetFound = false;
 
@@ -2156,42 +2130,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || currentKey;
       const currentCart = { ...(prev[cartKey] || {}) };
 
-      // Ищем сначала НЕКУПЛЕННЫЙ товар, принадлежащий текущему пользователю (или если автор покинул группу)
-      let realKey = Object.keys(currentCart).find((k) => {
+      // Ищем НЕКУПЛЕННЫЙ товар, строго принадлежащий текущему пользователю (c.addedByUserId === currentUser.id)
+      const realKey = Object.keys(currentCart).find((k) => {
         const c = currentCart[k];
         const cAdded = c.addedByUserId?.toLowerCase();
         if (c.isBought) return false;
-
-        const isMine = !cAdded || cAdded === uId;
-        const hasMembers = Boolean(family?.members && family.members.length > 0);
-        const isAuthorStillMember = hasMembers && cAdded && family!.members.some((m) => m.id.toLowerCase() === cAdded);
-        const canManage = isMine || (hasMembers && !isAuthorStillMember);
+        if (cAdded !== uId) return false;
 
         return (
-          canManage &&
-          (k.toLowerCase() === itemId.toLowerCase() ||
-            c.id.toLowerCase() === itemId.toLowerCase() ||
-            c.title.trim().toLowerCase() === itemId.trim().toLowerCase())
+          k.toLowerCase() === itemId.toLowerCase() ||
+          c.id.toLowerCase() === itemId.toLowerCase() ||
+          c.title.trim().toLowerCase() === itemId.trim().toLowerCase()
         );
       });
-
-      // Fallback ТОЛЬКО по точному GUID/ключу записи своего товара, ни в коем случае не по названию
-      if (!realKey) {
-        realKey = Object.keys(currentCart).find((k) => {
-          const c = currentCart[k];
-          const cAdded = c.addedByUserId?.toLowerCase();
-          const isMine = !cAdded || cAdded === uId;
-          const hasMembers = Boolean(family?.members && family.members.length > 0);
-          const isAuthorStillMember = hasMembers && cAdded && family!.members.some((m) => m.id.toLowerCase() === cAdded);
-          const canManage = isMine || (hasMembers && !isAuthorStillMember);
-
-          return (
-            canManage &&
-            (k.toLowerCase() === itemId.toLowerCase() ||
-              c.id.toLowerCase() === itemId.toLowerCase())
-          );
-        });
-      }
 
       if (!realKey) return prev;
       targetFound = true;
@@ -2206,16 +2157,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     if (!targetFound) {
-      Alert.alert(
-        'Ограничение',
-        'Вы можете удалять только то количество товара, которое добавили лично вы.'
-      );
       return;
     }
 
     CartService.deleteItem(serverTargetId).catch((e: any) => {
       console.warn('Cloud sync delete failed:', e);
-      Alert.alert('Ограничение', e.message || 'Вы можете удалять только те товары, которые добавили лично вы.');
       const targetFam = (isEventCart && activeEvent?.familyId) ? activeEvent.familyId : activeFamilyId;
       if (targetFam) {
         CartService.getCart(targetFam, isEventCart ? activeCartId : undefined).then((fresh) => {

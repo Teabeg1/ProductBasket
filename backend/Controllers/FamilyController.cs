@@ -209,7 +209,7 @@ public class FamilyController : ControllerBase
     }
 
     /// <summary>
-    /// Выход из группы с каскадным удалением своих товаров
+    /// Выход из группы со сбросом назначенных покупок в статус «Не назначено» (без удаления товаров)
     /// </summary>
     [HttpPost("leave")]
     [HttpPost("{familyId:guid}/leave")]

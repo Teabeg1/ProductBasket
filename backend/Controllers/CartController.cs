@@ -215,13 +215,7 @@ public class CartController : ControllerBase
 
         if (item.AddedByUserId.HasValue && item.AddedByUserId.Value != userId.Value)
         {
-            var isAuthorStillMember = await _context.FamilyMembers
-                .AnyAsync(fm => fm.FamilyId == item.FamilyId && fm.UserId == item.AddedByUserId.Value);
-
-            if (isAuthorStillMember)
-            {
-                return BadRequest(new { message = "Вы можете изменять количество только тех товаров, которые добавили лично вы." });
-            }
+            return BadRequest(new { message = "Вы можете изменять количество только тех товаров, которые добавили лично вы." });
         }
 
         var familyId = item.FamilyId;
@@ -272,13 +266,7 @@ public class CartController : ControllerBase
 
         if (item.AddedByUserId.HasValue && item.AddedByUserId.Value != userId.Value)
         {
-            var isAuthorStillMember = await _context.FamilyMembers
-                .AnyAsync(fm => fm.FamilyId == item.FamilyId && fm.UserId == item.AddedByUserId.Value);
-
-            if (isAuthorStillMember)
-            {
-                return BadRequest(new { message = "Вы можете уменьшать количество только тех товаров, которые добавили лично вы." });
-            }
+            return BadRequest(new { message = "Вы можете уменьшать количество только тех товаров, которые добавили лично вы." });
         }
 
         var familyId = item.FamilyId;
@@ -329,13 +317,7 @@ public class CartController : ControllerBase
 
         if (item.AddedByUserId.HasValue && item.AddedByUserId.Value != userId.Value)
         {
-            var isAuthorStillMember = await _context.FamilyMembers
-                .AnyAsync(fm => fm.FamilyId == item.FamilyId && fm.UserId == item.AddedByUserId.Value);
-
-            if (isAuthorStillMember)
-            {
-                return BadRequest(new { message = "Вы можете удалять только те товары, которые добавили лично вы." });
-            }
+            return BadRequest(new { message = "Вы можете удалять только те товары, которые добавили лично вы." });
         }
 
         var familyId = item.FamilyId;

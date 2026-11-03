@@ -397,7 +397,22 @@ public class CartController : ControllerBase
             return Ok(new CartActionResponse { Success = true, Item = MapCartItemDto(item) });
         }
 
-        // 3. Товар занят другим участником -> блокировка
+        // 3. Товар занят другим участником -> проверяем, состоит ли он ещё в группе
+        var isTakenUserInFamily = await _context.FamilyMembers
+            .AnyAsync(fm => fm.FamilyId == item.FamilyId && fm.UserId == item.TakenByUserId!.Value);
+
+        if (!isTakenUserInFamily)
+        {
+            // Пользователь покинул группу -> товар свободен, берем себе
+            item.TakenByUserId = userId.Value;
+            item.Status = "Taken";
+            item.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            await BroadcastStatusChangedAsync(item, user.DisplayName);
+            return Ok(new CartActionResponse { Success = true, Item = MapCartItemDto(item, user.DisplayName) });
+        }
+
         var otherName = item.TakenByUser?.DisplayName ?? "другой участник";
         return BadRequest(new CartActionResponse
         {
@@ -452,6 +467,20 @@ public class CartController : ControllerBase
 
         if (item.TakenByUserId == userId.Value)
         {
+            return Ok(new CartActionResponse { Success = true, Item = MapCartItemDto(item, user.DisplayName) });
+        }
+
+        var isTakenUserInFamily = await _context.FamilyMembers
+            .AnyAsync(fm => fm.FamilyId == item.FamilyId && fm.UserId == item.TakenByUserId!.Value);
+
+        if (!isTakenUserInFamily)
+        {
+            item.TakenByUserId = userId.Value;
+            item.Status = "Taken";
+            item.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            await BroadcastStatusChangedAsync(item, user.DisplayName);
             return Ok(new CartActionResponse { Success = true, Item = MapCartItemDto(item, user.DisplayName) });
         }
 
@@ -558,6 +587,18 @@ public class CartController : ControllerBase
 
         if (item.TakenByUserId != userId.Value)
         {
+            var isTakenUserInFamily = await _context.FamilyMembers
+                .AnyAsync(fm => fm.FamilyId == item.FamilyId && fm.UserId == item.TakenByUserId.Value);
+
+            if (!isTakenUserInFamily)
+            {
+                return BadRequest(new CartActionResponse
+                {
+                    Success = false,
+                    Message = "Участник, выбиравший этот товар, покинул группу. Сначала выберите товар («Куплю я»)."
+                });
+            }
+
             var otherName = item.TakenByUser?.DisplayName ?? "другой участник";
             return BadRequest(new CartActionResponse
             {

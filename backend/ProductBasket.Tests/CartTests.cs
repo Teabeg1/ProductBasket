@@ -745,6 +745,37 @@ public class CartTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Cart_AssignProduct_ItemTakenByExMember_AllowsRemainingMemberToClaim()
+    {
+        var (clientA, clientB, familyId) = await SetupFamilyWithTwoUsersAsync();
+
+        // 1. User A adds an item
+        var addRes = await clientA.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Сметана",
+            Count = 1
+        });
+        var item = await addRes.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(item);
+
+        // 2. User B takes the item
+        var takeResB = await clientB.PostAsync($"/api/cart/{item.Id}/take", null);
+        Assert.Equal(HttpStatusCode.OK, takeResB.StatusCode);
+
+        // 3. User B leaves family
+        var leaveRes = await clientB.PostAsync($"/api/family/{familyId}/leave", null);
+        Assert.Equal(HttpStatusCode.OK, leaveRes.StatusCode);
+
+        // 4. User A assigns product to self -> must succeed
+        var assignResA = await clientA.PostAsync($"/api/cart/{item.Id}/assign", null);
+        Assert.Equal(HttpStatusCode.OK, assignResA.StatusCode);
+        var assignResult = await assignResA.Content.ReadFromJsonAsync<CartActionResponse>();
+        Assert.NotNull(assignResult?.Item);
+        Assert.Equal("Taken", assignResult.Item.Status);
+    }
+
+    [Fact]
     public async Task Auth_UpdatePushToken_Succeeds()
     {
         var (client, _) = await CreateAuthenticatedUserAsync("PushUser");

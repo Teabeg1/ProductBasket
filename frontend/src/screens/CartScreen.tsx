@@ -397,8 +397,8 @@ export const CartScreen: React.FC<CartScreenProps> = ({
                           ]}
                           activeOpacity={0.7}
                           onPress={() => {
-                            if (myCount > 0 && myTargetCartId) {
-                              deleteFromCart(myTargetCartId);
+                            if (myCount > 0 && myActiveItems.length > 0) {
+                              myActiveItems.forEach((it) => deleteFromCart(it.id));
                             }
                           }}
                         >

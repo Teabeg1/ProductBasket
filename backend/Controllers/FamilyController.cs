@@ -267,6 +267,13 @@ public class FamilyController : ControllerBase
         }
 
         await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new { familyId = fStr });
+
+        var eventIds = userItems.Where(i => i.EventId.HasValue).Select(i => i.EventId!.Value).Distinct().ToList();
+        foreach (var evId in eventIds)
+        {
+            await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new { familyId = fStr, eventId = evId.ToString().ToLowerInvariant() });
+        }
+
         await _hubContext.Clients.Group(fStr).SendAsync("MemberLeft", new { familyId = fStr, userId = uStr });
         await _hubContext.Clients.Group(fStr).SendAsync("MemberRemoved", new { familyId = fStr, userId = uStr });
 
@@ -332,6 +339,13 @@ public class FamilyController : ControllerBase
         }
 
         await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new { familyId = fStr });
+
+        var eventIds = itemsToReset.Where(i => i.EventId.HasValue).Select(i => i.EventId!.Value).Distinct().ToList();
+        foreach (var evId in eventIds)
+        {
+            await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new { familyId = fStr, eventId = evId.ToString().ToLowerInvariant() });
+        }
+
         await _hubContext.Clients.Group(fStr).SendAsync("MemberRemoved", new { familyId = fStr, userId = uStr });
 
         return Ok(new { success = true });

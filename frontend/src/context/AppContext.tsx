@@ -2205,9 +2205,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const uId = currentUser.id.toLowerCase();
     const assignedId = item.assignedToUserId?.toLowerCase() || null;
+    const isAssignedMemberStillInFamily = !assignedId || (
+      family?.members ? family.members.some((m) => m.id.toLowerCase() === assignedId) : true
+    );
 
-    if (assignedId === null) {
-      // Свободный товар -> берем себе
+    if (assignedId === null || !isAssignedMemberStillInFamily) {
+      // Свободный товар (или закрепленный за ушедшим участником) -> берем себе
       setCarts((prev) => ({
         ...prev,
         [matchedKey]: {
@@ -2262,8 +2265,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const uId = currentUser.id.toLowerCase();
     const assignedId = item.assignedToUserId?.toLowerCase() || null;
+    const isAssignedMemberStillInFamily = !assignedId || (
+      family?.members ? family.members.some((m) => m.id.toLowerCase() === assignedId) : true
+    );
 
-    if (assignedId === null) {
+    if (assignedId === null || !isAssignedMemberStillInFamily) {
       return {
         success: false,
         message: 'Сначала выберите товар («Куплю я»), чтобы затем отметить его статусом «Куплено».',

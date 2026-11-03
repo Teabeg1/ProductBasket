@@ -156,6 +156,14 @@ public class FamilyTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Null(remaining.AssignedToUserId);
         Assert.Equal("Pending", remaining.Status);
         Assert.False(remaining.IsBought);
+
+        // Оставшийся участник (User A) может взять освободившийся товар на себя («Куплю я»)
+        var takeRes = await userAClient.PostAsync($"/api/cart/{item.Id}/take", null);
+        Assert.Equal(HttpStatusCode.OK, takeRes.StatusCode);
+        var takeItem = await takeRes.Content.ReadFromJsonAsync<CartActionResponse>();
+        Assert.NotNull(takeItem?.Item);
+        Assert.Equal(userAAuth.User.Id, takeItem.Item.AssignedToUserId);
+        Assert.Equal("Taken", takeItem.Item.Status);
     }
 
     [Fact]

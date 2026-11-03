@@ -943,4 +943,115 @@ public class CartTests : IClassFixture<CustomWebApplicationFactory>
         Assert.NotNull(finalItems);
         Assert.Empty(finalItems);
     }
+
+    [Fact]
+    public async Task WhenMemberLeaves_RemainingMemberAddingSameItem_AdoptsAuthorlessItemWithoutDuplication()
+    {
+        var (clientA, clientB, familyId) = await SetupFamilyWithTwoUsersAsync();
+
+        // 1. Bob adds "Овсянка" (count = 1)
+        var addBob = await clientB.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Овсянка",
+            Count = 1
+        });
+        Assert.Equal(HttpStatusCode.Created, addBob.StatusCode);
+        var bobItem = await addBob.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(bobItem);
+
+        // 2. Bob leaves the family
+        var leaveRes = await clientB.PostAsync($"/api/family/{familyId}/leave", null);
+        Assert.Equal(HttpStatusCode.OK, leaveRes.StatusCode);
+
+        // 3. Alice adds "Овсянка" (count = 1) -> must adopt the authorless item instead of duplicating it
+        var addAlice = await clientA.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Овсянка",
+            Count = 1
+        });
+        Assert.Equal(HttpStatusCode.OK, addAlice.StatusCode);
+        var adopted = await addAlice.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(adopted);
+        Assert.Equal(bobItem.Id, adopted.Id);
+        Assert.Equal(2, adopted.Count);
+
+        // 4. Cart has exactly 1 item
+        var cartRes = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var items = await cartRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.NotNull(items);
+        Assert.Single(items);
+        Assert.Equal(2, items[0].Count);
+
+        // 5. Alice decrements item
+        var decRes = await clientA.PostAsync($"/api/cart/items/{adopted.Id}/decrement", null);
+        Assert.Equal(HttpStatusCode.OK, decRes.StatusCode);
+
+        // 6. Alice deletes item
+        var delRes = await clientA.DeleteAsync($"/api/cart/items/{adopted.Id}");
+        Assert.Equal(HttpStatusCode.OK, delRes.StatusCode);
+    }
+
+    [Fact]
+    public async Task Cart_TwoMembers_AddSameItem_Isolation_DecrementAndDeleteOnlyAffectsOwnShare()
+    {
+        var (clientA, clientB, familyId) = await SetupFamilyWithTwoUsersAsync();
+
+        // 1. Alice adds "Бананы" (1)
+        var addA = await clientA.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Бананы",
+            Count = 1
+        });
+        Assert.Equal(HttpStatusCode.Created, addA.StatusCode);
+        var itemA = await addA.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(itemA);
+
+        // 2. Bob adds "Бананы" (1) -> separate item for Bob
+        var addB = await clientB.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Бананы",
+            Count = 1
+        });
+        Assert.Equal(HttpStatusCode.Created, addB.StatusCode);
+        var itemB = await addB.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(itemB);
+        Assert.NotEqual(itemA.Id, itemB.Id);
+
+        // 3. Bob adds another "Бананы" -> Bob's count becomes 2
+        var addB2 = await clientB.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Бананы",
+            Count = 1
+        });
+        Assert.Equal(HttpStatusCode.OK, addB2.StatusCode);
+        var itemB2 = await addB2.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(itemB2);
+        Assert.Equal(itemB.Id, itemB2.Id);
+        Assert.Equal(2, itemB2.Count);
+
+        // 4. Bob decrements -> Bob's count becomes 1, Alice's item is untouched
+        var decB = await clientB.PostAsync($"/api/cart/items/{itemB.Id}/decrement", null);
+        Assert.Equal(HttpStatusCode.OK, decB.StatusCode);
+
+        // 5. Bob deletes his item
+        var delB = await clientB.DeleteAsync($"/api/cart/items/{itemB.Id}");
+        Assert.Equal(HttpStatusCode.OK, delB.StatusCode);
+
+        // 6. Alice's item is still present in the family cart
+        var getRes = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var items = await getRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.NotNull(items);
+        Assert.Single(items);
+        Assert.Equal(itemA.Id, items[0].Id);
+        Assert.Equal(1, items[0].Count);
+
+        // 7. Bob attempts to delete Alice's item -> forbidden (BadRequest)
+        var delAByBob = await clientB.DeleteAsync($"/api/cart/items/{itemA.Id}");
+        Assert.Equal(HttpStatusCode.BadRequest, delAByBob.StatusCode);
+    }
 }

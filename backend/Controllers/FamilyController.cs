@@ -279,7 +279,8 @@ public class FamilyController : ControllerBase
 
         await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new { familyId = fStr });
 
-        var eventIds = userItems.Where(i => i.EventId.HasValue).Select(i => i.EventId!.Value).Distinct().ToList();
+        var allChangedItems = userItems.Concat(userAddedItems).ToList();
+        var eventIds = allChangedItems.Where(i => i.EventId.HasValue).Select(i => i.EventId!.Value).Distinct().ToList();
         foreach (var evId in eventIds)
         {
             await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new { familyId = fStr, eventId = evId.ToString().ToLowerInvariant() });
@@ -362,7 +363,8 @@ public class FamilyController : ControllerBase
 
         await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new { familyId = fStr });
 
-        var eventIds = itemsToReset.Where(i => i.EventId.HasValue).Select(i => i.EventId!.Value).Distinct().ToList();
+        var allChangedItems = itemsToReset.Concat(addedItemsToReset).ToList();
+        var eventIds = allChangedItems.Where(i => i.EventId.HasValue).Select(i => i.EventId!.Value).Distinct().ToList();
         foreach (var evId in eventIds)
         {
             await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new { familyId = fStr, eventId = evId.ToString().ToLowerInvariant() });

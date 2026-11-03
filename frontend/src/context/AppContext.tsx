@@ -2025,7 +2025,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 if (k.toLowerCase() === lowerCreatedId) return false;
                 const itAdded = it.addedByUserId?.toLowerCase();
                 // Изоляция: заменять временный ключ можно только если он принадлежит текущему пользователю
-                if (itAdded && itAdded !== uId) return false;
+                if (!itAdded || itAdded !== uId) return false;
                 // Строгая проверка: только временные ключи или созданный локально ключ
                 const isTempKey =
                   (createdTempKey && k.toLowerCase() === createdTempKey.toLowerCase()) ||
@@ -2075,7 +2075,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const currentCart = { ...(prev[cartKey] || {}) };
 
       // Ищем НЕКУПЛЕННЫЙ товар, принадлежащий текущему пользователю или без автора/автор покинул группу
-      const realKey = Object.keys(currentCart).find((k) => {
+      // 1. Сначала по точному ID (ключ или c.id)
+      let realKey = Object.keys(currentCart).find((k) => {
         const c = currentCart[k];
         const cAdded = c.addedByUserId?.toLowerCase();
         if (c.isBought) return false;
@@ -2086,10 +2087,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         return (
           k.toLowerCase() === itemId.toLowerCase() ||
-          c.id.toLowerCase() === itemId.toLowerCase() ||
-          c.title.trim().toLowerCase() === itemId.trim().toLowerCase()
+          c.id.toLowerCase() === itemId.toLowerCase()
         );
       });
+
+      // 2. Если по точному ID не найден, ищем по названию
+      if (!realKey) {
+        realKey = Object.keys(currentCart).find((k) => {
+          const c = currentCart[k];
+          const cAdded = c.addedByUserId?.toLowerCase();
+          if (c.isBought) return false;
+          if (cAdded && cAdded !== uId) {
+            const isAuthorInFamily = family?.members?.some((m) => m.id.toLowerCase() === cAdded);
+            if (isAuthorInFamily) return false;
+          }
+
+          return c.title.trim().toLowerCase() === itemId.trim().toLowerCase();
+        });
+      }
 
       if (!realKey) return prev;
       targetFound = true;
@@ -2161,7 +2176,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const currentCart = { ...(prev[cartKey] || {}) };
 
       // Ищем НЕКУПЛЕННЫЙ товар, принадлежащий текущему пользователю или без автора/автор покинул группу
-      const realKey = Object.keys(currentCart).find((k) => {
+      // 1. Сначала по точному ID (ключ или c.id)
+      let realKey = Object.keys(currentCart).find((k) => {
         const c = currentCart[k];
         const cAdded = c.addedByUserId?.toLowerCase();
         if (c.isBought) return false;
@@ -2172,10 +2188,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         return (
           k.toLowerCase() === itemId.toLowerCase() ||
-          c.id.toLowerCase() === itemId.toLowerCase() ||
-          c.title.trim().toLowerCase() === itemId.trim().toLowerCase()
+          c.id.toLowerCase() === itemId.toLowerCase()
         );
       });
+
+      // 2. Если по точному ID не найден, ищем по названию
+      if (!realKey) {
+        realKey = Object.keys(currentCart).find((k) => {
+          const c = currentCart[k];
+          const cAdded = c.addedByUserId?.toLowerCase();
+          if (c.isBought) return false;
+          if (cAdded && cAdded !== uId) {
+            const isAuthorInFamily = family?.members?.some((m) => m.id.toLowerCase() === cAdded);
+            if (isAuthorInFamily) return false;
+          }
+
+          return c.title.trim().toLowerCase() === itemId.trim().toLowerCase();
+        });
+      }
 
       if (!realKey) return prev;
       targetFound = true;

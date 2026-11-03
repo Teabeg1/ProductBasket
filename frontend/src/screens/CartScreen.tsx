@@ -259,12 +259,18 @@ export const CartScreen: React.FC<CartScreenProps> = ({
               const isBought = count === 0 && boughtCount > 0;
               // Изоляция владения добавленным количеством (Sprint 4 Block 4.2)
               const uId = currentUser.id?.toLowerCase();
-              const myActiveItems = activeCartItems.filter((it) => {
-                const authorId = it.addedByUserId?.toLowerCase();
-                if (!authorId || authorId === uId) return true;
-                const isAuthorInFamily = family?.members?.some((m) => m.id.toLowerCase() === authorId);
-                return !isAuthorInFamily;
-              });
+              const myActiveItems = activeCartItems
+                .filter((it) => {
+                  const authorId = it.addedByUserId?.toLowerCase();
+                  if (!authorId || authorId === uId) return true;
+                  const isAuthorInFamily = family?.members?.some((m) => m.id.toLowerCase() === authorId);
+                  return !isAuthorInFamily;
+                })
+                .sort((a, b) => {
+                  const aIsMine = a.addedByUserId?.toLowerCase() === uId ? 1 : 0;
+                  const bIsMine = b.addedByUserId?.toLowerCase() === uId ? 1 : 0;
+                  return bIsMine - aIsMine;
+                });
               const myCount = myActiveItems.reduce((sum, it) => sum + it.count, 0);
               const myTargetCartId = myActiveItems[0]?.id || null;
               const targetCartId = myTargetCartId;

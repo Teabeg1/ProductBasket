@@ -144,22 +144,29 @@ public class CartController : ControllerBase
 
         var cleanTitle = request.Title.Trim().ToLower();
 
-        // Проверяем, есть ли уже этот товар в корзине семьи/мероприятия, добавленный ТЕКУЩИМ пользователем.
+        // Проверяем, есть ли уже этот товар в корзине семьи/мероприятия, добавленный ТЕКУЩИМ пользователем,
+        // либо оставшийся без автора (после выхода участника из группы).
         // Изоляция количеств по авторам (Sprint 4 Block 4.2): каждый пользователь владеет своим добавленным количеством.
         var existing = await _context.CartItems
             .Include(c => c.TakenByUser)
-            .FirstOrDefaultAsync(c =>
+            .Where(c =>
                 c.FamilyId == targetFamilyId.Value &&
                 c.EventId == request.EventId &&
                 !c.IsBought && c.Status != "Purchased" &&
                 (c.TakenByUserId == null || c.TakenByUserId == userId.Value) &&
-                c.AddedByUserId == userId.Value &&
                 ((request.ProductId.HasValue && c.ProductId == request.ProductId) ||
                  c.Title.ToLower() == cleanTitle)
-            );
+            )
+            .OrderByDescending(c => c.AddedByUserId == userId.Value)
+            .ThenByDescending(c => c.AddedByUserId == null)
+            .FirstOrDefaultAsync();
 
-        if (existing != null)
+        if (existing != null && (existing.AddedByUserId == userId.Value || existing.AddedByUserId == null))
         {
+            if (existing.AddedByUserId == null)
+            {
+                existing.AddedByUserId = userId.Value;
+            }
             existing.Quantity += request.Count > 0 ? request.Count : 1;
             existing.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
@@ -696,6 +703,7 @@ public class CartController : ControllerBase
             {
                 return await query
                     .OrderByDescending(c => c.AddedByUserId == userId.Value)
+                    .ThenByDescending(c => c.AddedByUserId == null)
                     .ThenByDescending(c => c.UpdatedAt)
                     .FirstOrDefaultAsync();
             }
@@ -736,6 +744,7 @@ public class CartController : ControllerBase
         {
             return await titleQuery
                 .OrderByDescending(c => c.AddedByUserId == userId.Value)
+                .ThenByDescending(c => c.AddedByUserId == null)
                 .ThenByDescending(c => c.UpdatedAt)
                 .FirstOrDefaultAsync();
         }

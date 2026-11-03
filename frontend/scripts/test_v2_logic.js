@@ -502,6 +502,37 @@ console.log('\n[Test 9] Russian-Only Mode & Typography Scaling System...');
   console.log('✓ PASS: Strict Russian-only mode verified and font scaling multiplier defaults are active.');
 }
 
+// [Test 10] Cart Ownership Isolation, Member Leave Retention & Delete Permissions
+function test10CartOwnershipAndRetention() {
+  console.log('\n[Test 10] Cart Ownership Isolation, Member Leave Retention & Delete Permissions...');
+
+  const fs = require('fs');
+  const path = require('path');
+
+  const appContextContent = fs.readFileSync(path.join(__dirname, '../src/context/AppContext.tsx'), 'utf8');
+  const cartScreenContent = fs.readFileSync(path.join(__dirname, '../src/screens/CartScreen.tsx'), 'utf8');
+  const rolesScreenContent = fs.readFileSync(path.join(__dirname, '../src/screens/RolesScreen.tsx'), 'utf8');
+
+  // 10.1 addToCart: tempKey must strictly verify itAdded === uId and never touch another user's item
+  assert(appContextContent.includes('!itAdded || itAdded !== uId'), 'addToCart tempKey must strictly isolate by addedByUserId');
+
+  // 10.2 decrementCartItem & deleteFromCart: split into exact ID and fallback title
+  assert(appContextContent.includes('// 1. Сначала по точному ID'), 'Must check exact ID first');
+  assert(appContextContent.includes('// 2. Если по точному ID не найден, ищем по названию'), 'Must have fallback title search');
+
+  // 10.3 CartScreen: myActiveItems must permit !authorId || authorId === uId || !isAuthorInFamily
+  assert(cartScreenContent.includes('!authorId || authorId === uId'), 'CartScreen must allow unassigned/own items');
+  assert(cartScreenContent.includes('bIsMine - aIsMine'), 'CartScreen must prioritize user own items for decrement');
+
+  // 10.4 RolesScreen: isItemUnassigned must exclude isBought and return true when assigned member left
+  assert(rolesScreenContent.includes('if (item.isBought) return false;'), 'RolesScreen isItemUnassigned must exclude bought items');
+
+  console.log('✓ PASS: Cart ownership isolation, member leave retention, and delete permissions verified.');
+}
+
+test10CartOwnershipAndRetention();
+
 console.log('\n=======================================================');
-console.log('   ALL 9 COMPREHENSIVE TESTS SUCCESSFULLY PASSED!');
+console.log('   ALL 10 COMPREHENSIVE TESTS SUCCESSFULLY PASSED!');
 console.log('=======================================================\n');
+

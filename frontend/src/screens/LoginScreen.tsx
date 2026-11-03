@@ -106,14 +106,9 @@ export const LoginScreen: React.FC = () => {
 
   if (checkingSession) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
-        <View style={[styles.logoBadge, { backgroundColor: colors.primaryLight, width: 64, height: 64, borderRadius: 20 }]}>
-          <ShoppingBag size={34} color={colors.primary} strokeWidth={2.3} />
-        </View>
-        <Text style={[styles.title, { color: colors.textDark, marginTop: 16 }]}>Product Basket</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary, marginTop: 4, marginBottom: 24, textAlign: 'center' }]}>
-          Загрузка корзины и распределения ролей...
-        </Text>
+      <SafeAreaView
+        style={[styles.safeArea, styles.loadingCenter, { backgroundColor: colors.background }]}
+      >
         <ActivityIndicator size="large" color={colors.primary} />
       </SafeAreaView>
     );
@@ -215,6 +210,10 @@ export const LoginScreen: React.FC = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+  },
+  loadingCenter: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   container: {
     flex: 1,

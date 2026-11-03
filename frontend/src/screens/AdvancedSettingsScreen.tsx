@@ -33,7 +33,7 @@ export const AdvancedSettingsScreen: React.FC = () => {
   const handleTestPush = async () => {
     setTestingPush(true);
     try {
-      await registerAndSavePushToken().catch(() => {});
+      await registerAndSavePushToken(true).catch(() => {});
       const res = await AuthService.testPushNotification();
       if (res.success) {
         Alert.alert('Push-уведомление', res.message || 'Тестовое push-уведомление успешно отправлено на устройство.');

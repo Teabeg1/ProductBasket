@@ -103,6 +103,8 @@ class SignalRManager {
   private customProductDeletedListeners: Set<CustomProductDeletedCallback> = new Set();
   private activeFamilyId: string | null = null;
   private isConnecting = false;
+  private joinedFamilyIds: Set<string> = new Set();
+  private joiningInFlight: Map<string, Promise<void>> = new Map();
 
   async start(): Promise<signalR.HubConnection | null> {
     const token = await AuthService.getToken();
@@ -232,25 +234,53 @@ class SignalRManager {
 
       this.connection.onreconnected(async (connectionId) => {
         console.log('[SignalR] Reconnected successfully:', connectionId);
+        this.joinedFamilyIds.clear();
+        this.joiningInFlight.clear();
         if (this.activeFamilyId) {
+          const famId = this.activeFamilyId;
+          const normId = famId.trim().toLowerCase();
           try {
-            await this.connection?.invoke('JoinFamily', this.activeFamilyId);
-            console.log('[SignalR] Rejoined family group after reconnect:', this.activeFamilyId);
+            await this.connection?.invoke('JoinFamily', famId);
+            this.joinedFamilyIds.add(normId);
+            console.log('[SignalR] Rejoined family group after reconnect:', famId);
           } catch (e) {
             console.warn('[SignalR] Failed to rejoin family group after reconnect:', e);
           }
         }
       });
 
+      this.connection.onclose(() => {
+        this.joinedFamilyIds.clear();
+        this.joiningInFlight.clear();
+      });
+
+      this.joinedFamilyIds.clear();
+      this.joiningInFlight.clear();
       await this.connection.start();
       console.log('[SignalR] Connected successfully to CartHub');
 
       if (this.activeFamilyId) {
-        try {
-          await this.connection.invoke('JoinFamily', this.activeFamilyId);
-          console.log('[SignalR] Auto-joined active family after start:', this.activeFamilyId);
-        } catch (e) {
-          console.warn('[SignalR] Auto-join active family failed:', e);
+        const famId = this.activeFamilyId;
+        const normId = famId.trim().toLowerCase();
+        if (!this.joinedFamilyIds.has(normId)) {
+          const inFlight = this.joiningInFlight.get(normId);
+          if (inFlight) {
+            await inFlight;
+          } else {
+            const autoJoinPromise = (async () => {
+              try {
+                await this.connection!.invoke('JoinFamily', famId);
+                this.joinedFamilyIds.add(normId);
+                console.log('[SignalR] Auto-joined active family after start:', famId);
+              } catch (e) {
+                console.warn('[SignalR] Auto-join active family failed:', e);
+              } finally {
+                this.joiningInFlight.delete(normId);
+              }
+            })();
+            this.joiningInFlight.set(normId, autoJoinPromise);
+            await autoJoinPromise;
+          }
         }
       }
 
@@ -265,7 +295,17 @@ class SignalRManager {
 
   async joinFamily(familyId: string) {
     if (!familyId) return;
+    const normId = familyId.trim().toLowerCase();
     this.activeFamilyId = familyId;
+
+    if (this.joinedFamilyIds.has(normId)) {
+      return;
+    }
+
+    const existingPromise = this.joiningInFlight.get(normId);
+    if (existingPromise) {
+      return await existingPromise;
+    }
 
     if (!this.connection || this.connection.state === signalR.HubConnectionState.Disconnected) {
       await this.start();
@@ -279,11 +319,37 @@ class SignalRManager {
     }
 
     if (this.connection?.state === signalR.HubConnectionState.Connected) {
+      if (this.joinedFamilyIds.has(normId)) {
+        return;
+      }
+
+      const joinPromise = (async () => {
+        try {
+          await this.connection!.invoke('JoinFamily', familyId);
+          this.joinedFamilyIds.add(normId);
+          console.log('[SignalR] Successfully joined family group:', familyId);
+        } catch (err) {
+          console.warn('[SignalR] joinFamily failed:', err);
+        } finally {
+          this.joiningInFlight.delete(normId);
+        }
+      })();
+
+      this.joiningInFlight.set(normId, joinPromise);
+      await joinPromise;
+    }
+  }
+
+  async leaveFamily(familyId: string) {
+    if (!familyId) return;
+    const normId = familyId.trim().toLowerCase();
+    this.joinedFamilyIds.delete(normId);
+    this.joiningInFlight.delete(normId);
+    if (this.connection?.state === signalR.HubConnectionState.Connected) {
       try {
-        await this.connection.invoke('JoinFamily', familyId);
-        console.log('[SignalR] Successfully joined family group:', familyId);
+        await this.connection.invoke('LeaveFamily', familyId);
       } catch (err) {
-        console.warn('[SignalR] joinFamily failed:', err);
+        console.warn('[SignalR] leaveFamily failed:', err);
       }
     }
   }
@@ -383,6 +449,9 @@ class SignalRManager {
   }
 
   async stop() {
+    this.joinedFamilyIds.clear();
+    this.joiningInFlight.clear();
+    this.isConnecting = false;
     if (this.connection) {
       try {
         await this.connection.stop();

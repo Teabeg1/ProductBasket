@@ -20,8 +20,26 @@ if (Platform.OS !== 'web') {
   });
 }
 
-export async function registerAndSavePushToken(): Promise<string | null> {
+let hasAttemptedPushRegistration = false;
+let pushPermissionDeniedPermanent = false;
+let isPushRegistrationInProgress = false;
+
+export function resetPushTokenState() {
+  hasAttemptedPushRegistration = false;
+  pushPermissionDeniedPermanent = false;
+  isPushRegistrationInProgress = false;
+}
+
+export async function registerAndSavePushToken(force = false): Promise<string | null> {
   if (Platform.OS === 'web') return null;
+  if (!force && (hasAttemptedPushRegistration || pushPermissionDeniedPermanent)) {
+    return null;
+  }
+  if (isPushRegistrationInProgress) {
+    return null;
+  }
+  isPushRegistrationInProgress = true;
+
   try {
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
@@ -31,33 +49,40 @@ export async function registerAndSavePushToken(): Promise<string | null> {
         lightColor: '#FF231F7C',
       }).catch(() => {});
     }
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    const { status: existingStatus, canAskAgain } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
+      if (canAskAgain !== false || force) {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
     }
     if (finalStatus !== 'granted') {
-      console.warn('[PUSH] Permission not granted:', finalStatus);
+      pushPermissionDeniedPermanent = true;
+      hasAttemptedPushRegistration = true;
+      // Do not use console.warn to avoid console spam in Expo Go / Android
       return null;
     }
 
     let tokenData: Notifications.ExpoPushToken | null = null;
     try {
       tokenData = await Notifications.getExpoPushTokenAsync();
-    } catch (e) {
-      console.warn('[PUSH] Notifications.getExpoPushTokenAsync() error:', e);
+    } catch {
+      // Push notifications are unavailable in Expo Go on Android since SDK 53
     }
 
     if (tokenData?.data) {
-      await AuthService.savePushToken(tokenData.data);
+      await AuthService.savePushToken(tokenData.data).catch(() => {});
       console.log('[PUSH] Push token successfully registered and saved:', tokenData.data);
+      hasAttemptedPushRegistration = true;
       return tokenData.data;
     }
     return null;
-  } catch (err) {
-    console.warn('[PUSH] Could not register push token:', err);
+  } catch {
     return null;
+  } finally {
+    isPushRegistrationInProgress = false;
+    hasAttemptedPushRegistration = true;
   }
 }
 
@@ -290,6 +315,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const currentUserIdRef = useRef(currentUser.id);
   currentUserIdRef.current = currentUser.id;
   const joinFamilyInFlightRef = useRef<Record<string, Promise<boolean> | undefined>>({});
+  const lastRegisteredUserIdRef = useRef<string | null>(null);
+  const appStateRef = useRef(AppState.currentState);
+  const lastResumeTimeRef = useRef<number>(0);
+  const lastSignalRSetupKeyRef = useRef<string>('');
 
   const refreshEvents = async (famId?: string) => {
     try {
@@ -359,7 +388,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Восстановление соединения и мгновенное обновление корзины при возвращении приложения из фона
   useEffect(() => {
     const subscription = AppState.addEventListener('change', async (nextState) => {
-      if (nextState === 'active') {
+      const isComingFromBackground =
+        Boolean(appStateRef.current?.match(/inactive|background/)) && nextState === 'active';
+      appStateRef.current = nextState;
+
+      if (isComingFromBackground) {
+        const now = Date.now();
+        if (now - lastResumeTimeRef.current < 2500) {
+          return;
+        }
+        lastResumeTimeRef.current = now;
+
         const famId = activeFamilyIdRef.current;
         const uId = currentUserIdRef.current;
         if (famId && uId) {
@@ -419,9 +458,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               await SignalRService.joinFamily(famId).catch(() => {});
             }
           }).catch(() => {});
-
-          // 4. Регистрация push-токена в фоне
-          registerAndSavePushToken().catch(() => {});
         }
       }
     });
@@ -573,6 +609,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const unsubMemberRemoved = SignalRService.onMemberRemoved((data) => {
         const isSelf = data.userId?.toLowerCase() === currentUserIdRef.current?.toLowerCase();
         if (isSelf) {
+          SignalRService.leaveFamily(data.familyId).catch(() => {});
           // Текущего пользователя удалили или он вышел
           setFamilies((prev) => {
             const remaining = prev.filter((f) => f.id.toLowerCase() !== data.familyId?.toLowerCase());
@@ -806,6 +843,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
 
     const setupSignalR = async () => {
+      const currentSetupKey = `${currentUser.id}_${activeFamilyId}`;
+      const isAlreadySetup = lastSignalRSetupKeyRef.current === currentSetupKey;
+      lastSignalRSetupKeyRef.current = currentSetupKey;
+
       await SignalRService.start();
       for (const fam of families) {
         if (fam.id) {
@@ -814,6 +855,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       if (activeFamilyId && !families.some((f) => f.id.toLowerCase() === activeFamilyId.toLowerCase())) {
         await SignalRService.joinFamily(activeFamilyId);
+      }
+
+      if (isAlreadySetup) {
+        return;
       }
 
       // 1. Загрузка начальной корзины из облака
@@ -849,42 +894,51 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // 3. Загрузка пользовательских товаров для всех групп пользователя (Bug 9)
       try {
         const familiesToLoad = families.length > 0 ? families : (activeFamilyId ? [{ id: activeFamilyId }] : []);
+        const loadedMap = new Map<string, CatalogProduct[]>();
         for (const fam of familiesToLoad) {
           if (!fam.id) continue;
-          const prods = await ProductsService.getProducts(fam.id);
-          const customs = prods.filter((p: any) => p.familyId != null || p.isCustom || (p.category && p.category.includes('Свои')));
-          const seen = new Set<string>();
-          const mappedCustoms: CatalogProduct[] = [];
-          for (const cp of customs) {
-            const normId = String(cp.id).toLowerCase();
-            if (!seen.has(normId)) {
-              seen.add(normId);
-              mappedCustoms.push({
-                id: normId,
-                title: cp.title,
-                unit: cp.unit || '1 шт',
-                emoji: cp.emoji || '🛍️',
-                imageKey: cp.imageKey || '',
-              });
+          try {
+            const prods = await ProductsService.getProducts(fam.id);
+            const customs = prods.filter((p: any) => p.familyId != null || p.isCustom || (p.category && p.category.includes('Свои')));
+            const seen = new Set<string>();
+            const mappedCustoms: CatalogProduct[] = [];
+            for (const cp of customs) {
+              const normId = String(cp.id).toLowerCase();
+              if (!seen.has(normId)) {
+                seen.add(normId);
+                mappedCustoms.push({
+                  id: normId,
+                  title: cp.title,
+                  unit: cp.unit || '1 шт',
+                  emoji: cp.emoji || '🛍️',
+                  imageKey: cp.imageKey || '',
+                });
+              }
             }
+            loadedMap.set(fam.id.toLowerCase(), mappedCustoms);
+          } catch (err) {
+            console.warn('Failed to load products for family:', fam.id, err);
           }
+        }
+        if (loadedMap.size > 0) {
           setFamilies((prev) =>
-            prev.map((f) =>
-              f.id.toLowerCase() === fam.id.toLowerCase()
-                ? { ...f, customProducts: mappedCustoms }
-                : f
-            )
+            prev.map((f) => {
+              const customs = loadedMap.get(f.id.toLowerCase());
+              return customs ? { ...f, customProducts: customs } : f;
+            })
           );
           setKnownFamilies((prev) => {
-            const matchedKey = Object.keys(prev).find((k) => k.toLowerCase() === fam.id.toLowerCase());
-            if (!matchedKey) return prev;
-            return {
-              ...prev,
-              [matchedKey]: {
-                ...prev[matchedKey],
-                customProducts: mappedCustoms,
-              },
-            };
+            const updated = { ...prev };
+            for (const [fId, customs] of loadedMap.entries()) {
+              const matchedKey = Object.keys(updated).find((k) => k.toLowerCase() === fId);
+              if (matchedKey) {
+                updated[matchedKey] = {
+                  ...updated[matchedKey],
+                  customProducts: customs,
+                };
+              }
+            }
+            return updated;
           });
         }
       } catch (e) {
@@ -1139,13 +1193,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setActiveCartId(activeFam ? activeFam.id : 'main');
     setCurrentUser(loggedUser);
 
-    if (activeFam && authData.token) {
-      SignalRService.start().then(() => {
-        SignalRService.joinFamily(activeFam!.id).catch(() => {});
-      }).catch(() => {});
-    }
 
-    registerAndSavePushToken().catch(() => {});
+    if (loggedUser.id && lastRegisteredUserIdRef.current !== loggedUser.id) {
+      lastRegisteredUserIdRef.current = loggedUser.id;
+      registerAndSavePushToken().catch(() => {});
+    }
     setIsInitialLoading(false);
     return { user: loggedUser, hasFamily };
   };
@@ -1175,6 +1227,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       await AuthService.removeToken();
     } catch {}
+    lastRegisteredUserIdRef.current = null;
+    lastSignalRSetupKeyRef.current = '';
+    resetPushTokenState();
+    await SignalRService.stop().catch(() => {});
     setCurrentUser(EMPTY_USER);
     setFamilies([]);
     setActiveFamilyId(null);
@@ -1584,6 +1640,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
+    SignalRService.leaveFamily(targetFamilyId).catch(() => {});
     FamilyService.leaveFamily(targetFamilyId).catch((e) => console.warn('Backend leaveFamily failed:', e));
   };
 

@@ -664,20 +664,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           };
         });
 
-        // Снимаем товары, закрепленные за удаленным участником (во всех корзинах группы и мероприятий)
+        // Снимаем товары, закрепленные за удаленным участником или добавленные им (во всех корзинах группы и мероприятий)
         setCarts((prev) => {
           let hasAnyModified = false;
           const updatedAll = { ...prev };
-          const targetFamPrefix = data.familyId?.toLowerCase();
           Object.keys(updatedAll).forEach((cKey) => {
             const currentFamCart = { ...(updatedAll[cKey] || {}) };
             let modified = false;
             Object.keys(currentFamCart).forEach((k) => {
-              if (currentFamCart[k].assignedToUserId?.toLowerCase() === data.userId?.toLowerCase()) {
+              const item = currentFamCart[k];
+              const isAssignedToUser = item.assignedToUserId?.toLowerCase() === data.userId?.toLowerCase();
+              const isAddedByUser = item.addedByUserId?.toLowerCase() === data.userId?.toLowerCase();
+              if (isAssignedToUser || isAddedByUser) {
                 currentFamCart[k] = {
-                  ...currentFamCart[k],
-                  assignedToUserId: null,
-                  isBought: false,
+                  ...item,
+                  assignedToUserId: isAssignedToUser ? null : item.assignedToUserId,
+                  isBought: isAssignedToUser ? false : item.isBought,
+                  addedByUserId: isAddedByUser ? null : item.addedByUserId,
                 };
                 modified = true;
               }
@@ -1572,18 +1575,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const leaverId = currentUser.id.toLowerCase();
     const targetFamilyId = family.id.toLowerCase();
 
-    // Сбрасываем назначенные товары уходящего человека обратно в общий список покупок семьи и мероприятий (Sprint 4 Block 4.1)
+    // Сбрасываем назначенные и добавленные товары уходящего человека обратно в общий список покупок семьи и мероприятий (Sprint 4 Block 4.1)
     setCarts((prevCarts) => {
       const updatedAll = { ...prevCarts };
       Object.keys(updatedAll).forEach((cKey) => {
         const cCart = { ...(updatedAll[cKey] || {}) };
         let modified = false;
         Object.keys(cCart).forEach((itemId) => {
-          if (cCart[itemId].assignedToUserId?.toLowerCase() === leaverId) {
+          const item = cCart[itemId];
+          const isAssigned = item.assignedToUserId?.toLowerCase() === leaverId;
+          const isAdded = item.addedByUserId?.toLowerCase() === leaverId;
+          if (isAssigned || isAdded) {
             cCart[itemId] = {
-              ...cCart[itemId],
-              assignedToUserId: null,
-              isBought: false,
+              ...item,
+              assignedToUserId: isAssigned ? null : item.assignedToUserId,
+              isBought: isAssigned ? false : item.isBought,
+              addedByUserId: isAdded ? null : item.addedByUserId,
             };
             modified = true;
           }
@@ -1649,18 +1656,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const targetFamilyId = family.id.toLowerCase();
     const cleanMemberId = memberId.toLowerCase();
 
-    // Сбрасываем назначенные товары удаленного человека обратно в общий список покупок семьи и мероприятий (Sprint 4 Block 4.1)
+    // Сбрасываем назначенные и добавленные товары удаленного человека обратно в общий список покупок семьи и мероприятий (Sprint 4 Block 4.1)
     setCarts((prevCarts) => {
       const updatedAll = { ...prevCarts };
       Object.keys(updatedAll).forEach((cKey) => {
         const cCart = { ...(updatedAll[cKey] || {}) };
         let modified = false;
         Object.keys(cCart).forEach((itemId) => {
-          if (cCart[itemId].assignedToUserId?.toLowerCase() === cleanMemberId) {
+          const item = cCart[itemId];
+          const isAssigned = item.assignedToUserId?.toLowerCase() === cleanMemberId;
+          const isAdded = item.addedByUserId?.toLowerCase() === cleanMemberId;
+          if (isAssigned || isAdded) {
             cCart[itemId] = {
-              ...cCart[itemId],
-              assignedToUserId: null,
-              isBought: false,
+              ...item,
+              assignedToUserId: isAssigned ? null : item.assignedToUserId,
+              isBought: isAssigned ? false : item.isBought,
+              addedByUserId: isAdded ? null : item.addedByUserId,
             };
             modified = true;
           }
@@ -1937,6 +1948,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const cleanTitle = item.title.trim().toLowerCase();
     const uId = currentUser.id?.toLowerCase();
 
+    let createdTempKey: string | null = null;
+
     setCarts((prev) => {
       const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || currentKey;
       const currentCart = { ...(prev[cartKey] || {}) };
@@ -1949,7 +1962,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return (
           !c.isBought &&
           (!cAssigned || cAssigned === uId) &&
-          cAdded === uId &&
+          (!cAdded || cAdded === uId) &&
           (k.toLowerCase() === item.id.toLowerCase() ||
             c.id.toLowerCase() === item.id.toLowerCase() ||
             c.title.trim().toLowerCase() === cleanTitle)
@@ -1966,6 +1979,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } else {
         // Создаем отдельный новый некупленный товар с привязкой к currentUser.id (Sprint 4 Block 4.2)
         const uniqueKey = currentCart[item.id] ? `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` : item.id;
+        createdTempKey = uniqueKey;
         currentCart[uniqueKey] = {
           ...item,
           id: uniqueKey,
@@ -2007,7 +2021,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               const currentCart = { ...(prev[cartKey] || {}) };
               const tempKey = Object.keys(currentCart).find((k) => {
                 const it = currentCart[k];
-                return !it.isBought && it.title.trim().toLowerCase() === cleanTitle && k !== lowerCreatedId;
+                if (it.isBought) return false;
+                if (k.toLowerCase() === lowerCreatedId) return false;
+                const itAdded = it.addedByUserId?.toLowerCase();
+                // Изоляция: заменять временный ключ можно только если он принадлежит текущему пользователю
+                if (itAdded && itAdded !== uId) return false;
+                // Строгая проверка: только временные ключи или созданный локально ключ
+                const isTempKey =
+                  (createdTempKey && k.toLowerCase() === createdTempKey.toLowerCase()) ||
+                  k.startsWith('cart-') ||
+                  k.startsWith('prod-') ||
+                  k.startsWith('custom-') ||
+                  k.toLowerCase() === item.id.toLowerCase();
+                if (!isTempKey) return false;
+                return it.title.trim().toLowerCase() === cleanTitle;
               });
               if (tempKey && tempKey !== lowerCreatedId) {
                 const itemData = currentCart[tempKey];
@@ -2016,7 +2043,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   ...itemData,
                   id: lowerCreatedId,
                   count: Math.max(createdItem.count || 1, itemData.count),
-                  addedByUserId: createdItem.addedByUserId ? createdItem.addedByUserId.toLowerCase() : itemData.addedByUserId,
+                  addedByUserId: createdItem.addedByUserId ? createdItem.addedByUserId.toLowerCase() : (itemData.addedByUserId || currentUser.id),
                 };
                 return { ...prev, [cartKey]: currentCart };
               }
@@ -2047,12 +2074,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || currentKey;
       const currentCart = { ...(prev[cartKey] || {}) };
 
-      // Ищем НЕКУПЛЕННЫЙ товар, строго принадлежащий текущему пользователю (c.addedByUserId === currentUser.id)
+      // Ищем НЕКУПЛЕННЫЙ товар, принадлежащий текущему пользователю или без автора/автор покинул группу
       const realKey = Object.keys(currentCart).find((k) => {
         const c = currentCart[k];
         const cAdded = c.addedByUserId?.toLowerCase();
         if (c.isBought) return false;
-        if (cAdded !== uId) return false;
+        if (cAdded && cAdded !== uId) {
+          const isAuthorInFamily = family?.members?.some((m) => m.id.toLowerCase() === cAdded);
+          if (isAuthorInFamily) return false;
+        }
 
         return (
           k.toLowerCase() === itemId.toLowerCase() ||
@@ -2130,12 +2160,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || currentKey;
       const currentCart = { ...(prev[cartKey] || {}) };
 
-      // Ищем НЕКУПЛЕННЫЙ товар, строго принадлежащий текущему пользователю (c.addedByUserId === currentUser.id)
+      // Ищем НЕКУПЛЕННЫЙ товар, принадлежащий текущему пользователю или без автора/автор покинул группу
       const realKey = Object.keys(currentCart).find((k) => {
         const c = currentCart[k];
         const cAdded = c.addedByUserId?.toLowerCase();
         if (c.isBought) return false;
-        if (cAdded !== uId) return false;
+        if (cAdded && cAdded !== uId) {
+          const isAuthorInFamily = family?.members?.some((m) => m.id.toLowerCase() === cAdded);
+          if (isAuthorInFamily) return false;
+        }
 
         return (
           k.toLowerCase() === itemId.toLowerCase() ||

@@ -66,6 +66,7 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
   const totalCount = itemsList.length;
 
   const isItemUnassigned = (item: { assignedToUserId: string | null; isBought?: boolean }) => {
+    if (item.isBought) return false;
     if (!item.assignedToUserId) return true;
     if (family?.members && family.members.length > 0) {
       const isMember = family.members.some(

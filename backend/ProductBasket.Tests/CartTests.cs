@@ -889,4 +889,58 @@ public class CartTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Contains("ExponentPushToken[TestPushToken999]", _factory.PushService.Calls[0].Tokens);
         Assert.Equal("Проверка уведомлений", _factory.PushService.Calls[0].Title);
     }
+
+    [Fact]
+    public async Task WhenMemberLeaves_TheirItemsArePreserved_AndRemainingMemberCanManageThem()
+    {
+        var (clientA, clientB, familyId) = await SetupFamilyWithTwoUsersAsync();
+
+        // 1. Bob adds an item and assigns it to himself
+        var addRes = await clientB.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Гречка",
+            Count = 2
+        });
+        Assert.Equal(HttpStatusCode.Created, addRes.StatusCode);
+        var item = await addRes.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(item);
+
+        var assignRes = await clientB.PostAsync($"/api/cart/{item.Id}/assign", null);
+        Assert.Equal(HttpStatusCode.OK, assignRes.StatusCode);
+
+        // 2. Bob leaves the family
+        var leaveRes = await clientB.PostAsync($"/api/family/{familyId}/leave", null);
+        Assert.Equal(HttpStatusCode.OK, leaveRes.StatusCode);
+
+        // 3. Alice fetches the family cart -> item MUST still be there!
+        var getRes = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var items = await getRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.NotNull(items);
+        var preservedItem = items.FirstOrDefault(i => i.Id == item.Id);
+        Assert.NotNull(preservedItem);
+        Assert.Equal("Гречка", preservedItem.Title);
+        Assert.Equal(2, preservedItem.Count);
+        Assert.Null(preservedItem.AssignedToUserId);
+        Assert.Null(preservedItem.AddedByUserId);
+        Assert.False(preservedItem.IsBought);
+
+        // 4. Alice can assign this item to herself
+        var takeRes = await clientA.PostAsync($"/api/cart/{preservedItem.Id}/assign", null);
+        Assert.Equal(HttpStatusCode.OK, takeRes.StatusCode);
+
+        // 5. Alice can decrement the item
+        var decRes = await clientA.PostAsync($"/api/cart/items/{preservedItem.Id}/decrement", null);
+        Assert.Equal(HttpStatusCode.OK, decRes.StatusCode);
+
+        // 6. Alice can delete the item
+        var delRes = await clientA.DeleteAsync($"/api/cart/items/{preservedItem.Id}");
+        Assert.Equal(HttpStatusCode.OK, delRes.StatusCode);
+
+        // 7. Verify cart is now empty
+        var finalRes = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var finalItems = await finalRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.NotNull(finalItems);
+        Assert.Empty(finalItems);
+    }
 }

@@ -245,6 +245,17 @@ public class FamilyController : ControllerBase
             item.UpdatedAt = DateTime.UtcNow;
         }
 
+        // Сброс авторства добавленных товаров уходящего пользователя (чтобы оставшиеся участники могли ими управлять)
+        var userAddedItems = await _context.CartItems
+            .Where(c => c.FamilyId == targetFamilyId.Value && c.AddedByUserId == userId.Value)
+            .ToListAsync();
+
+        foreach (var item in userAddedItems)
+        {
+            item.AddedByUserId = null;
+            item.UpdatedAt = DateTime.UtcNow;
+        }
+
         _context.FamilyMembers.Remove(member);
 
         await _context.SaveChangesAsync();
@@ -314,6 +325,17 @@ public class FamilyController : ControllerBase
             item.TakenByUserId = null;
             item.Status = "Pending";
             item.IsBought = false;
+            item.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // Сброс авторства добавленных товаров удаленного пользователя
+        var addedItemsToReset = await _context.CartItems
+            .Where(c => c.FamilyId == targetFamilyId.Value && c.AddedByUserId == memberUserId)
+            .ToListAsync();
+
+        foreach (var item in addedItemsToReset)
+        {
+            item.AddedByUserId = null;
             item.UpdatedAt = DateTime.UtcNow;
         }
 

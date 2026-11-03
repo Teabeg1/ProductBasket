@@ -15,6 +15,7 @@ public class CartItemDto
     public string Status { get; set; } = "Pending";
     public Guid? AssignedToUserId { get; set; }
     public Guid? TakenByUserId => AssignedToUserId;
+    public Guid? AddedByUserId { get; set; }
     public string? TakenByName { get; set; }
     public bool IsBought { get; set; }
     public Guid? EventId { get; set; }

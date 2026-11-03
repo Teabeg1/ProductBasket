@@ -7,6 +7,7 @@ import {
   Platform,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { AppText as Text } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,6 +27,7 @@ export const LoginScreen: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
   useEffect(() => {
@@ -33,7 +35,10 @@ export const LoginScreen: React.FC = () => {
     const checkSavedSession = async () => {
       try {
         const token = await AuthService.getToken();
-        if (!token) return;
+        if (!token) {
+          if (isMounted) setCheckingSession(false);
+          return;
+        }
         const profile = await AuthService.getProfile();
         if (profile && isMounted) {
           const { hasFamily } = await setCurrentUserFromAuth({ token, user: profile });
@@ -42,9 +47,11 @@ export const LoginScreen: React.FC = () => {
           } else {
             navigation.navigate('Onboarding');
           }
+        } else if (isMounted) {
+          setCheckingSession(false);
         }
       } catch (e) {
-        // stay on login
+        if (isMounted) setCheckingSession(false);
       }
     };
     checkSavedSession();
@@ -96,6 +103,21 @@ export const LoginScreen: React.FC = () => {
       setLoading(false);
     }
   };
+
+  if (checkingSession) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <View style={[styles.logoBadge, { backgroundColor: colors.primaryLight, width: 64, height: 64, borderRadius: 20 }]}>
+          <ShoppingBag size={34} color={colors.primary} strokeWidth={2.3} />
+        </View>
+        <Text style={[styles.title, { color: colors.textDark, marginTop: 16 }]}>Product Basket</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary, marginTop: 4, marginBottom: 24, textAlign: 'center' }]}>
+          Загрузка корзины и распределения ролей...
+        </Text>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>

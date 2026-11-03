@@ -107,8 +107,29 @@ public class FamilyController : ControllerBase
             JoinedAt = DateTime.UtcNow
         };
 
-        _context.FamilyMembers.Add(newMember);
-        await _context.SaveChangesAsync();
+        try
+        {
+            _context.FamilyMembers.Add(newMember);
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            var duplicateMember = await _context.FamilyMembers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(m => m.FamilyId == family.Id && m.UserId == userId.Value);
+
+            if (duplicateMember != null)
+            {
+                return Ok(new FamilyResponse
+                {
+                    FamilyId = family.Id,
+                    Name = family.Name,
+                    InviteCode = family.InviteCode,
+                    Role = duplicateMember.Role
+                });
+            }
+            throw;
+        }
 
         var user = await _context.Users.FindAsync(userId.Value);
         if (user != null)
@@ -211,18 +232,40 @@ public class FamilyController : ControllerBase
             return NotFound(new { message = "Вы не являетесь участником этой группы" });
         }
 
-        // Каскадное удаление товаров участника из всех корзин этой семьи
+        // Сброс назначенных покупок участника обратно в общий список покупок (Sprint 4 Block 4.1)
         var userItems = await _context.CartItems
             .Where(c => c.FamilyId == targetFamilyId.Value && c.TakenByUserId == userId.Value)
             .ToListAsync();
 
-        _context.CartItems.RemoveRange(userItems);
+        foreach (var item in userItems)
+        {
+            item.TakenByUserId = null;
+            item.Status = "Pending";
+            item.IsBought = false;
+            item.UpdatedAt = DateTime.UtcNow;
+        }
+
         _context.FamilyMembers.Remove(member);
 
         await _context.SaveChangesAsync();
 
         var fStr = targetFamilyId.Value.ToString().ToLowerInvariant();
         var uStr = userId.Value.ToString().ToLowerInvariant();
+
+        foreach (var item in userItems)
+        {
+            await _hubContext.Clients.Group(fStr).SendAsync("ProductStatusChanged", new
+            {
+                cartItemId = item.Id.ToString().ToLowerInvariant(),
+                productId = item.ProductId?.ToString().ToLowerInvariant(),
+                status = "Pending",
+                takenByUserId = (string?)null,
+                assignedToUserId = (string?)null,
+                takenByName = (string?)null,
+                isBought = false
+            });
+        }
+
         await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new { familyId = fStr });
         await _hubContext.Clients.Group(fStr).SendAsync("MemberLeft", new { familyId = fStr, userId = uStr });
         await _hubContext.Clients.Group(fStr).SendAsync("MemberRemoved", new { familyId = fStr, userId = uStr });
@@ -254,18 +297,40 @@ public class FamilyController : ControllerBase
             return NotFound(new { message = "Участник не найден в данной группе" });
         }
 
-        // Удаляем закрепленные товары этого человека из корзин семьи
-        var itemsToRemove = await _context.CartItems
+        // Сброс назначенных покупок этого человека обратно в общий список покупок семьи (Sprint 4 Block 4.1)
+        var itemsToReset = await _context.CartItems
             .Where(c => c.FamilyId == targetFamilyId.Value && c.TakenByUserId == memberUserId)
             .ToListAsync();
 
-        _context.CartItems.RemoveRange(itemsToRemove);
+        foreach (var item in itemsToReset)
+        {
+            item.TakenByUserId = null;
+            item.Status = "Pending";
+            item.IsBought = false;
+            item.UpdatedAt = DateTime.UtcNow;
+        }
+
         _context.FamilyMembers.Remove(memberToRemove);
 
         await _context.SaveChangesAsync();
 
         var fStr = targetFamilyId.Value.ToString().ToLowerInvariant();
         var uStr = memberUserId.ToString().ToLowerInvariant();
+
+        foreach (var item in itemsToReset)
+        {
+            await _hubContext.Clients.Group(fStr).SendAsync("ProductStatusChanged", new
+            {
+                cartItemId = item.Id.ToString().ToLowerInvariant(),
+                productId = item.ProductId?.ToString().ToLowerInvariant(),
+                status = "Pending",
+                takenByUserId = (string?)null,
+                assignedToUserId = (string?)null,
+                takenByName = (string?)null,
+                isBought = false
+            });
+        }
+
         await _hubContext.Clients.Group(fStr).SendAsync("CartUpdated", new { familyId = fStr });
         await _hubContext.Clients.Group(fStr).SendAsync("MemberRemoved", new { familyId = fStr, userId = uStr });
 
@@ -346,8 +411,8 @@ public class FamilyController : ControllerBase
             Role = fm.Role,
             IsCurrentUser = fm.UserId == currentUserId,
             AvatarChar = initial,
-            AvatarBg = "#E0E7FF",
-            AvatarColor = "#3730A3",
+            AvatarBg = "#FCE7F3",
+            AvatarColor = "#9D174D",
             JoinedAt = fm.JoinedAt
         };
     }

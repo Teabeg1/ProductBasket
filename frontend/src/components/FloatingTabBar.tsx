@@ -14,7 +14,7 @@ interface FloatingTabBarProps {
 
 export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({ activeTab, onTabPress }) => {
   const insets = useSafeAreaInsets();
-  const { colors, t } = useApp();
+  const { colors, t, currentUser } = useApp();
 
   const tabs: {
     id: MainTabType;
@@ -30,6 +30,8 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({ activeTab, onTab
 
   // Рассчитываем динамический нижний отступ, чтобы не перекрывать кнопки навигации Android
   const dynamicBottom = Math.max(insets.bottom + 12, 28);
+
+  const userInitial = currentUser?.name?.trim() ? currentUser.name.trim()[0].toUpperCase() : 'У';
 
   return (
     <View
@@ -60,7 +62,15 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({ activeTab, onTab
                 isActive && { backgroundColor: colors.lime },
               ]}
             >
-              <IconComponent size={18} color={iconColor} strokeWidth={isActive ? 2.4 : 1.8} />
+              {tab.id === 'Settings' ? (
+                <View style={styles.avatarIcon}>
+                  <Text style={styles.avatarCharText}>
+                    {userInitial}
+                  </Text>
+                </View>
+              ) : (
+                <IconComponent size={18} color={iconColor} strokeWidth={isActive ? 2.4 : 1.8} />
+              )}
               <Text
                 style={[
                   styles.tabLabel,
@@ -116,6 +126,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 4,
     paddingHorizontal: 2,
+  },
+  avatarIcon: {
+    width: 21,
+    height: 21,
+    borderRadius: 10.5,
+    backgroundColor: '#FCE7F3',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarCharText: {
+    color: '#9D174D',
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 14,
+    textAlign: 'center',
   },
   tabLabel: {
     fontSize: 10,

@@ -628,6 +628,164 @@ public class CartTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Cart_UserOwnership_IsolatesAddedCounts()
+    {
+        var (clientA, clientB, familyId) = await SetupFamilyWithTwoUsersAsync();
+
+        // 1. User 1 (Alice) adds 4 mayonnaise
+        var addResA = await clientA.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Майонез",
+            Count = 4
+        });
+        Assert.Equal(HttpStatusCode.Created, addResA.StatusCode);
+        var itemA = await addResA.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(itemA);
+        Assert.Equal(4, itemA.Count);
+
+        // 2. User 2 (Bob) adds 2 mayonnaise
+        var addResB = await clientB.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Майонез",
+            Count = 2
+        });
+        Assert.Equal(HttpStatusCode.Created, addResB.StatusCode);
+        var itemB = await addResB.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(itemB);
+        Assert.Equal(2, itemB.Count);
+
+        // 3. Both items exist in cart with their respective owners, sum is 6
+        var listRes = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var items = await listRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.NotNull(items);
+        Assert.Equal(2, items.Count);
+        Assert.Equal(6, items.Sum(i => i.Count));
+
+        // 4. Bob decrements mayonnaise via slug/title -> Bob's 2 should decrease to 1, Alice's 4 untouched
+        var decRes1 = await clientB.PostAsync("/api/cart/items/prod-mayo/decrement", null);
+        Assert.Equal(HttpStatusCode.OK, decRes1.StatusCode);
+
+        var listResAfter1 = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var itemsAfter1 = await listResAfter1.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.NotNull(itemsAfter1);
+        Assert.Equal(5, itemsAfter1.Sum(i => i.Count));
+        Assert.Equal(4, itemsAfter1.First(i => i.Id == itemA.Id).Count);
+        Assert.Equal(1, itemsAfter1.First(i => i.Id == itemB.Id).Count);
+
+        // 5. Bob decrements again -> Bob's 1 reaches 0 and is removed
+        var decRes2 = await clientB.PostAsync("/api/cart/items/prod-mayo/decrement", null);
+        Assert.Equal(HttpStatusCode.OK, decRes2.StatusCode);
+
+        var listResAfter2 = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var itemsAfter2 = await listResAfter2.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.NotNull(itemsAfter2);
+        Assert.Single(itemsAfter2);
+        Assert.Equal(4, itemsAfter2[0].Count);
+        Assert.Equal(itemA.Id, itemsAfter2[0].Id);
+
+        // 6. Bob tries to decrement Alice's item directly by ID -> FORBIDDEN / BAD REQUEST
+        var decResAlice = await clientB.PostAsync($"/api/cart/items/{itemA.Id}/decrement", null);
+        Assert.Equal(HttpStatusCode.BadRequest, decResAlice.StatusCode);
+
+        // 7. Bob tries to delete Alice's item directly -> FORBIDDEN / BAD REQUEST
+        var delResAlice = await clientB.DeleteAsync($"/api/cart/items/{itemA.Id}");
+        Assert.Equal(HttpStatusCode.BadRequest, delResAlice.StatusCode);
+
+        // 8. Alice's 4 items are completely intact!
+        var finalListRes = await clientA.GetAsync($"/api/cart?familyId={familyId}");
+        var finalItems = await finalListRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
+        Assert.Single(finalItems!);
+        Assert.Equal(4, finalItems![0].Count);
+    }
+
+    [Fact]
+    public async Task Auth_UpdatePushToken_Succeeds()
+    {
+        var (client, _) = await CreateAuthenticatedUserAsync("PushUser");
+
+        var pushRes = await client.PostAsJsonAsync("/api/auth/push-token", new UpdatePushTokenRequest
+        {
+            PushToken = "ExponentPushToken[TestToken123456789]"
+        });
+        Assert.Equal(HttpStatusCode.OK, pushRes.StatusCode);
+    }
+
+    [Fact]
+    public async Task PushNotification_ItemAddedAndRemoved_DispatchesExpectedPushes()
+    {
+        _factory.PushService.Calls.Clear();
+
+        var (clientA, clientB, familyId) = await SetupFamilyWithTwoUsersAsync();
+
+        // 1. Assign push tokens to both users
+        await clientA.PostAsJsonAsync("/api/auth/push-token", new UpdatePushTokenRequest
+        {
+            PushToken = "ExponentPushToken[AliceToken123]"
+        });
+        await clientB.PostAsJsonAsync("/api/auth/push-token", new UpdatePushTokenRequest
+        {
+            PushToken = "ExponentPushToken[BobToken456]"
+        });
+
+        _factory.PushService.Calls.Clear();
+
+        // 2. Alice adds a product to the cart
+        var addRes = await clientA.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Сыр Гауда",
+            Count = 1
+        });
+        Assert.Equal(HttpStatusCode.Created, addRes.StatusCode);
+        var item = await addRes.Content.ReadFromJsonAsync<CartItemDto>();
+        Assert.NotNull(item);
+
+        // Bob must receive push notification about added product
+        var addedPush = _factory.PushService.Calls.FirstOrDefault(c => c.Tokens.Contains("ExponentPushToken[BobToken456]"));
+        Assert.NotNull(addedPush);
+        Assert.Contains("В корзину добавлен новый товар: Сыр Гауда", addedPush.Body);
+
+        _factory.PushService.Calls.Clear();
+
+        // 3. Bob marks "Куплю я" on this item
+        var takeRes = await clientB.PostAsync($"/api/cart/{item.Id}/take", null);
+        Assert.Equal(HttpStatusCode.OK, takeRes.StatusCode);
+
+        // 4. Alice (the owner who added it) deletes the item from cart
+        var delRes = await clientA.DeleteAsync($"/api/cart/items/{item.Id}");
+        Assert.Equal(HttpStatusCode.OK, delRes.StatusCode);
+
+        // Bob MUST receive notification: "Товар [Название], который вы собирались купить, был убран из корзины"
+        var removedPush = _factory.PushService.Calls.FirstOrDefault(c => c.Tokens.Contains("ExponentPushToken[BobToken456]"));
+        Assert.NotNull(removedPush);
+        Assert.Contains("который вы собирались купить, был убран из корзины", removedPush.Body);
+        Assert.Contains("Сыр Гауда", removedPush.Body);
+
+        _factory.PushService.Calls.Clear();
+
+        // 5. Bob adds an item himself and takes it
+        var addResBob = await clientB.PostAsJsonAsync("/api/cart/items", new AddToCartRequest
+        {
+            FamilyId = familyId,
+            Title = "Кефир",
+            Count = 1
+        });
+        var itemBob = await addResBob.Content.ReadFromJsonAsync<CartItemDto>();
+        await clientB.PostAsync($"/api/cart/{itemBob!.Id}/take", null);
+
+        _factory.PushService.Calls.Clear();
+
+        // 6. Bob deletes his OWN item that he was going to buy -> Bob should NOT receive a push notification to himself!
+        var delResBob = await clientB.DeleteAsync($"/api/cart/items/{itemBob.Id}");
+        Assert.Equal(HttpStatusCode.OK, delResBob.StatusCode);
+
+        var selfPush = _factory.PushService.Calls.FirstOrDefault(c => c.Tokens.Contains("ExponentPushToken[BobToken456]"));
+        Assert.Null(selfPush);
+    }
+
+    [Fact]
     public async Task DiagnosticVersionEndpoint_ReturnsValidInfo()
     {
         var (client, _, _) = await SetupFamilyWithTwoUsersAsync();
@@ -635,6 +793,25 @@ public class CartTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
         var json = await res.Content.ReadAsStringAsync();
         Assert.Contains("ProductBasket.Api", json);
-        Assert.Contains("fix-bug-14-unbought-separation", json);
+        Assert.Contains("sprint4-ownership-push-sync", json);
+    }
+
+    [Fact]
+    public async Task Auth_TestPush_WhenTokenPresent_SendsTestNotification()
+    {
+        _factory.PushService.Calls.Clear();
+        var (client, _) = await CreateAuthenticatedUserAsync("TestPushUser");
+
+        await client.PostAsJsonAsync("/api/auth/push-token", new UpdatePushTokenRequest
+        {
+            PushToken = "ExponentPushToken[TestPushToken999]"
+        });
+
+        var testRes = await client.PostAsync("/api/auth/test-push", null);
+        Assert.Equal(HttpStatusCode.OK, testRes.StatusCode);
+
+        Assert.Single(_factory.PushService.Calls);
+        Assert.Contains("ExponentPushToken[TestPushToken999]", _factory.PushService.Calls[0].Tokens);
+        Assert.Equal("Проверка уведомлений", _factory.PushService.Calls[0].Title);
     }
 }

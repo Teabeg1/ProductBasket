@@ -15,6 +15,7 @@ import { AppText as Text } from './AppText';
 import { X, PackagePlus, ShoppingBag } from 'lucide-react-native';
 import { useApp } from '../context/AppContext';
 import { AppButton } from './AppButton';
+import { isStrictEmoji } from '../utils/emoji';
 
 interface AddProductModalProps {
   visible: boolean;
@@ -37,6 +38,8 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
   const [title, setTitle] = useState('');
   const [unit, setUnit] = useState('');
   const [selectedEmoji, setSelectedEmoji] = useState('🥟');
+  const [customEmoji, setCustomEmoji] = useState('');
+  const [customEmojiError, setCustomEmojiError] = useState('');
 
   const handleAdd = () => {
     const trimmedTitle = title.trim();
@@ -47,6 +50,11 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
 
     if (!family) {
       Alert.alert('Ошибка', 'Сначала вступите или создайте группу');
+      return;
+    }
+
+    if (customEmoji.trim() && !isStrictEmoji(customEmoji.trim())) {
+      setCustomEmojiError('Разрешены только эмодзи (буквы и цифры запрещены)');
       return;
     }
 
@@ -65,6 +73,8 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
     setTitle('');
     setUnit('');
     setSelectedEmoji('🥟');
+    setCustomEmoji('');
+    setCustomEmojiError('');
   };
 
   return (
@@ -170,12 +180,16 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
                   contentContainerStyle={styles.emojiRow}
                 >
                   {EMOJI_OPTIONS.map((emoji) => {
-                    const isSelected = emoji === selectedEmoji;
+                    const isSelected = emoji === selectedEmoji && !customEmoji;
                     return (
                       <TouchableOpacity
                         key={emoji}
                         activeOpacity={0.7}
-                        onPress={() => setSelectedEmoji(emoji)}
+                        onPress={() => {
+                          setSelectedEmoji(emoji);
+                          setCustomEmoji('');
+                          setCustomEmojiError('');
+                        }}
                         style={[
                           styles.emojiCell,
                           {
@@ -190,6 +204,45 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
                     );
                   })}
                 </ScrollView>
+
+                {/* Ввод своего эмодзи со строгой валидацией */}
+                <View style={{ marginTop: 10 }}>
+                  <View
+                    style={[
+                      styles.inputBox,
+                      {
+                        backgroundColor: colors.cardSecondary,
+                        borderColor: customEmojiError ? colors.error : colors.border,
+                        height: 44,
+                      },
+                    ]}
+                  >
+                    <TextInput
+                      style={[styles.input, { color: colors.textDark, fontSize: 14 }]}
+                      value={customEmoji}
+                      onChangeText={(text) => {
+                        setCustomEmoji(text);
+                        if (!text.trim()) {
+                          setCustomEmojiError('');
+                          return;
+                        }
+                        if (isStrictEmoji(text.trim())) {
+                          setSelectedEmoji(text.trim());
+                          setCustomEmojiError('');
+                        } else {
+                          setCustomEmojiError('Разрешены только эмодзи (буквы и цифры запрещены)');
+                        }
+                      }}
+                      placeholder="Или введите свой эмодзи (напр. 🥑)"
+                      placeholderTextColor={colors.textMuted}
+                    />
+                  </View>
+                  {customEmojiError ? (
+                    <Text style={{ color: colors.error, fontSize: 12, marginTop: 4 }}>
+                      {customEmojiError}
+                    </Text>
+                  ) : null}
+                </View>
               </View>
 
               {/* Превью добавления */}
@@ -228,6 +281,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
                 <AppButton
                   title="Добавить в каталог группы"
                   onPress={handleAdd}
+                  disabled={!!customEmojiError}
                 />
               </View>
             </View>

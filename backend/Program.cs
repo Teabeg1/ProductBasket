@@ -40,6 +40,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // 2. Сервисы авторизации и JWT
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddHttpClient<IPushNotificationService, PushNotificationService>();
 
 var jwtSecretKey = builder.Configuration["Jwt:SecretKey"] 
     ?? "ProductBasket_SuperSecretKey_For_Development_Only_2026!#_MustBe32BytesOrMore";
@@ -192,8 +193,8 @@ app.MapHub<CartHub>("/hubs/cart");
 app.MapGet("/api/version", () => Results.Ok(new
 {
     service = "ProductBasket.Api",
-    version = "1.0.1",
-    build = "fix-bug-14-unbought-separation",
+    version = "1.0.2",
+    build = "sprint4-ownership-push-sync",
     database = useInMemory ? "InMemory" : "PostgreSQL",
     serverTimeUtc = DateTime.UtcNow
 }));

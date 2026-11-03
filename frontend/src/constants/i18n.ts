@@ -6,7 +6,7 @@ export const TRANSLATIONS = {
     tabCart: 'Корзина',
     tabRoles: 'Роли',
     tabEvents: 'Мероприятия',
-    tabSettings: 'Настройки',
+    tabSettings: 'Аккаунт',
 
     // Cart Screen
     cartTitle: 'Корзина',
@@ -40,7 +40,7 @@ export const TRANSLATIONS = {
     delete: 'Удалить',
 
     // Settings Screen
-    settingsTitle: 'Настройки',
+    settingsTitle: 'Аккаунт',
     familyGroupTitle: 'Управление группой',
     addFamilyMember: 'Добавить в группу',
     removeFamilyMember: 'Удалить из группы',

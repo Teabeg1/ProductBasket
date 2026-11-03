@@ -2,7 +2,7 @@
   "expo": {
     "name": "Совместная корзина",
     "slug": "product-basket",
-    "version": "1.0.0",
+    "version": "2.5.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -24,7 +24,19 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-status-bar"
-    ]
+      "expo-status-bar",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#2563EB"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7c1e34a6-4444-4e4b-9111-d07f354f3bfa"
+      }
+    }
   }
 }

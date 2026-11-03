@@ -75,6 +75,11 @@ public class AppDbContext : DbContext
                   .HasForeignKey(c => c.TakenByUserId)
                   .OnDelete(DeleteBehavior.SetNull);
 
+            entity.HasOne(c => c.AddedByUser)
+                  .WithMany()
+                  .HasForeignKey(c => c.AddedByUserId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasOne(c => c.Event)
                   .WithMany(e => e.CartItems)
                   .HasForeignKey(c => c.EventId)

@@ -24,6 +24,9 @@ public class User
     [MaxLength(500)]
     public string? AvatarUrl { get; set; }
 
+    [MaxLength(255)]
+    public string? ExpoPushToken { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<FamilyMember> FamilyMembers { get; set; } = new();

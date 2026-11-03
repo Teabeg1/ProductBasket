@@ -302,7 +302,7 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
                 activeTab === 'completed' && styles.folderTabTextActive,
               ]}
             >
-              📁 Завершенные ({completedEvents.length})
+              Завершенные ({completedEvents.length})
             </Text>
           </TouchableOpacity>
         </View>

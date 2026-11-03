@@ -16,6 +16,9 @@ import {
   ChevronDown,
   CheckCircle2,
   Sparkles,
+  ArrowLeft,
+  HelpCircle,
+  X,
 } from 'lucide-react-native';
 import { useApp, type FamilyState } from '../context/AppContext';
 import { PRODUCT_IMAGES } from '../constants/productImages';
@@ -54,6 +57,7 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
   const [membersModalVisible, setMembersModalVisible] = useState(false);
   const [switcherModalVisible, setSwitcherModalVisible] = useState(false);
   const [selectedFamilyForMembers, setSelectedFamilyForMembers] = useState<FamilyState | null>(null);
+  const [showHint, setShowHint] = useState(false);
 
   const activeEvent = events.find((e) => e.id.toLowerCase() === activeCartId.toLowerCase());
   const isEventCompleted = isEventCart && !!activeEvent?.isCompleted;
@@ -72,7 +76,6 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
     return true;
   });
 
-  const allAssigned = totalCount > 0 && itemsList.every((item) => item.assignedToUserId !== null);
   const allBought = totalCount > 0 && itemsList.every((item) => !!item.isBought);
 
   // Нажатие на назначение товара
@@ -113,8 +116,9 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
               activeOpacity={0.7}
               onPress={openMainCart}
             >
+              <ArrowLeft size={14} color={colors.primary} strokeWidth={2.5} style={{ marginRight: 5 }} />
               <Text style={[styles.returnMainBtnText, { color: colors.primary }]}>
-                ← К общей
+                К общей
               </Text>
             </TouchableOpacity>
           )}
@@ -244,12 +248,6 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
                     ✓ Все куплено
                   </Text>
                 </View>
-              ) : allAssigned ? (
-                <View style={[styles.donePill, { backgroundColor: colors.lime }]}>
-                  <Text style={[styles.donePillText, { color: colors.limeDark }]}>
-                    {t('allChosen')}
-                  </Text>
-                </View>
               ) : (
                 <View style={[styles.pendingPill, { backgroundColor: colors.primaryLight }]}>
                   <Text style={[styles.pendingPillText, { color: colors.primary }]}>
@@ -261,12 +259,55 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
           </View>
         </TouchableOpacity>
 
-        {/* Заголовок списка товаров */}
+        {/* Заголовок списка товаров с интерактивной подсказкой */}
         <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.textDark }]}>
-            {t('itemsToBuy')} ({totalCount})
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={[styles.sectionTitle, { color: colors.textDark }]}>
+              {t('itemsToBuy')} ({totalCount})
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.hintToggleBtn,
+                {
+                  backgroundColor: showHint ? colors.primary : colors.cardSecondary,
+                  borderColor: colors.border,
+                },
+              ]}
+              onPress={() => setShowHint(!showHint)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <HelpCircle size={14} color={showHint ? '#FFFFFF' : colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* Раскрывающаяся карточка подсказки */}
+        {showHint && (
+          <View
+            style={[
+              styles.hintCard,
+              { backgroundColor: colors.card, borderColor: colors.border, marginTop: 4, marginBottom: 12 },
+            ]}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <Text style={[styles.hintTitle, { color: colors.textDark, flex: 1, marginRight: 8 }]}>
+                💡 Статус «Куплено» и распределение ролей
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowHint(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={[styles.hintCloseBtn, { backgroundColor: colors.cardSecondary }]}
+              >
+                <X size={14} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.hintSubtitle, { color: colors.textSecondary, marginTop: 6 }]}>
+              1. Нажмите «Не назначено», чтобы взять товар на себя («Куплю я»).{'\n'}
+              2. После покупки товара в магазине нажмите чекбокс или «Купил?», чтобы отметить его статусом «Куплено».{'\n'}
+              3. Нажмите на название группы вверху, чтобы посмотреть полный список участников!
+            </Text>
+          </View>
+        )}
 
         {/* Фильтры: Все / Только мои / Свободные / Куплено */}
         {totalCount > 0 && (
@@ -608,25 +649,6 @@ export const RolesScreen: React.FC<RolesScreenProps> = ({
             })}
           </View>
         )}
-
-        {/* Карточка подсказки */}
-        {totalCount > 0 && (
-          <View
-            style={[
-              styles.hintCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <Text style={[styles.hintTitle, { color: colors.textDark }]}>
-              💡 Статус «Куплено» и распределение ролей
-            </Text>
-            <Text style={[styles.hintSubtitle, { color: colors.textSecondary }]}>
-              1. Нажмите «Не назначено», чтобы взять товар на себя («Куплю я»).{'\n'}
-              2. После покупки товара в магазине нажмите чекбокс или «Купил?», чтобы отметить его статусом «Куплено».{'\n'}
-              3. Нажмите на название группы вверху, чтобы посмотреть полный список участников!
-            </Text>
-          </View>
-        )}
       </ScrollView>
       )}
 
@@ -682,14 +704,31 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   returnMainBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
     marginLeft: 8,
   },
   returnMainBtnText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
+  },
+  hintToggleBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  hintCloseBtn: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   scrollContent: {
     paddingHorizontal: 16,

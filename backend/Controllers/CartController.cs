@@ -8,6 +8,8 @@ using ProductBasket.Api.Dtos;
 using ProductBasket.Api.Hubs;
 using ProductBasket.Api.Models;
 
+using ProductBasket.Api.Services;
+
 namespace ProductBasket.Api.Controllers;
 
 [Authorize]
@@ -17,12 +19,18 @@ public class CartController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly IHubContext<CartHub> _hubContext;
+    private readonly IPushNotificationService _pushService;
     private readonly ILogger<CartController> _logger;
 
-    public CartController(AppDbContext context, IHubContext<CartHub> hubContext, ILogger<CartController> logger)
+    public CartController(
+        AppDbContext context,
+        IHubContext<CartHub> hubContext,
+        IPushNotificationService pushService,
+        ILogger<CartController> logger)
     {
         _context = context;
         _hubContext = hubContext;
+        _pushService = pushService;
         _logger = logger;
     }
 
@@ -136,9 +144,8 @@ public class CartController : ControllerBase
 
         var cleanTitle = request.Title.Trim().ToLower();
 
-        // Проверяем, есть ли уже этот товар в корзине семьи/мероприятия.
-        // Товар можно объединять ТОЛЬКО если он еще НЕ куплен И (не взят никем ИЛИ взят текущим пользователем).
-        // Если товар уже куплен или взят другим участником — обязательно создается отдельный новый пункт (Bug 14).
+        // Проверяем, есть ли уже этот товар в корзине семьи/мероприятия, добавленный ТЕКУЩИМ пользователем.
+        // Изоляция количеств по авторам (Sprint 4 Block 4.2): каждый пользователь владеет своим добавленным количеством.
         var existing = await _context.CartItems
             .Include(c => c.TakenByUser)
             .FirstOrDefaultAsync(c =>
@@ -146,6 +153,7 @@ public class CartController : ControllerBase
                 c.EventId == request.EventId &&
                 !c.IsBought && c.Status != "Purchased" &&
                 (c.TakenByUserId == null || c.TakenByUserId == userId.Value) &&
+                c.AddedByUserId == userId.Value &&
                 ((request.ProductId.HasValue && c.ProductId == request.ProductId) ||
                  c.Title.ToLower() == cleanTitle)
             );
@@ -157,6 +165,7 @@ public class CartController : ControllerBase
             await _context.SaveChangesAsync();
 
             await BroadcastCartUpdatedAsync(targetFamilyId.Value, request.EventId);
+            await NotifyMembersItemAddedAsync(targetFamilyId.Value, request.EventId, existing.Title, userId.Value);
             return Ok(MapCartItemDto(existing));
         }
 
@@ -172,6 +181,7 @@ public class CartController : ControllerBase
             Quantity = request.Count > 0 ? request.Count : 1,
             Status = "Pending",
             TakenByUserId = null,
+            AddedByUserId = userId.Value,
             IsBought = false,
             EventId = request.EventId,
             CreatedAt = DateTime.UtcNow,
@@ -182,6 +192,7 @@ public class CartController : ControllerBase
         await _context.SaveChangesAsync();
 
         await BroadcastCartUpdatedAsync(targetFamilyId.Value, request.EventId);
+        await NotifyMembersItemAddedAsync(targetFamilyId.Value, request.EventId, newItem.Title, userId.Value);
         return StatusCode(StatusCodes.Status201Created, MapCartItemDto(newItem));
     }
 
@@ -202,6 +213,17 @@ public class CartController : ControllerBase
             return Forbid();
         }
 
+        if (item.AddedByUserId.HasValue && item.AddedByUserId.Value != userId.Value)
+        {
+            var isAuthorStillMember = await _context.FamilyMembers
+                .AnyAsync(fm => fm.FamilyId == item.FamilyId && fm.UserId == item.AddedByUserId.Value);
+
+            if (isAuthorStillMember)
+            {
+                return BadRequest(new { message = "Вы можете изменять количество только тех товаров, которые добавили лично вы." });
+            }
+        }
+
         var familyId = item.FamilyId;
         var eventId = item.EventId;
 
@@ -216,6 +238,7 @@ public class CartController : ControllerBase
 
         if (request.Count <= 0)
         {
+            await NotifyItemRemovedIfTakenAsync(item, userId.Value);
             _context.CartItems.Remove(item);
             await _context.SaveChangesAsync();
             await BroadcastCartUpdatedAsync(familyId, eventId);
@@ -247,6 +270,17 @@ public class CartController : ControllerBase
             return Forbid();
         }
 
+        if (item.AddedByUserId.HasValue && item.AddedByUserId.Value != userId.Value)
+        {
+            var isAuthorStillMember = await _context.FamilyMembers
+                .AnyAsync(fm => fm.FamilyId == item.FamilyId && fm.UserId == item.AddedByUserId.Value);
+
+            if (isAuthorStillMember)
+            {
+                return BadRequest(new { message = "Вы можете уменьшать количество только тех товаров, которые добавили лично вы." });
+            }
+        }
+
         var familyId = item.FamilyId;
         var eventId = item.EventId;
 
@@ -261,6 +295,7 @@ public class CartController : ControllerBase
 
         if (item.Quantity <= 1)
         {
+            await NotifyItemRemovedIfTakenAsync(item, userId.Value);
             _context.CartItems.Remove(item);
             await _context.SaveChangesAsync();
             await BroadcastCartUpdatedAsync(familyId, eventId);
@@ -292,6 +327,17 @@ public class CartController : ControllerBase
             return Forbid();
         }
 
+        if (item.AddedByUserId.HasValue && item.AddedByUserId.Value != userId.Value)
+        {
+            var isAuthorStillMember = await _context.FamilyMembers
+                .AnyAsync(fm => fm.FamilyId == item.FamilyId && fm.UserId == item.AddedByUserId.Value);
+
+            if (isAuthorStillMember)
+            {
+                return BadRequest(new { message = "Вы можете удалять только те товары, которые добавили лично вы." });
+            }
+        }
+
         var familyId = item.FamilyId;
         var eventId = item.EventId;
 
@@ -304,6 +350,7 @@ public class CartController : ControllerBase
             }
         }
 
+        await NotifyItemRemovedIfTakenAsync(item, userId.Value);
         _context.CartItems.Remove(item);
         await _context.SaveChangesAsync();
 
@@ -604,9 +651,15 @@ public class CartController : ControllerBase
 
             if (preferUnbought)
             {
+                query = query.Where(c => !c.IsBought && c.Status != "Purchased");
+            }
+
+            if (userId.HasValue)
+            {
                 return await query
-                    .OrderByDescending(c => c.UpdatedAt)
-                    .FirstOrDefaultAsync(c => !c.IsBought && c.Status != "Purchased");
+                    .OrderByDescending(c => c.AddedByUserId == userId.Value)
+                    .ThenByDescending(c => c.UpdatedAt)
+                    .FirstOrDefaultAsync();
             }
 
             return await query.OrderByDescending(c => c.UpdatedAt).FirstOrDefaultAsync();
@@ -638,9 +691,15 @@ public class CartController : ControllerBase
 
         if (preferUnbought)
         {
+            titleQuery = titleQuery.Where(c => !c.IsBought && c.Status != "Purchased");
+        }
+
+        if (userId.HasValue)
+        {
             return await titleQuery
-                .OrderByDescending(c => c.UpdatedAt)
-                .FirstOrDefaultAsync(c => !c.IsBought && c.Status != "Purchased");
+                .OrderByDescending(c => c.AddedByUserId == userId.Value)
+                .ThenByDescending(c => c.UpdatedAt)
+                .FirstOrDefaultAsync();
         }
 
         return await titleQuery.OrderByDescending(c => c.UpdatedAt).FirstOrDefaultAsync();
@@ -677,6 +736,50 @@ public class CartController : ControllerBase
         });
     }
 
+    private async Task NotifyMembersItemAddedAsync(Guid familyId, Guid? eventId, string itemTitle, Guid currentUserId)
+    {
+        var otherTokens = await _context.FamilyMembers
+            .Where(fm => fm.FamilyId == familyId && fm.UserId != currentUserId && !string.IsNullOrEmpty(fm.User.ExpoPushToken))
+            .Select(fm => fm.User.ExpoPushToken!)
+            .ToListAsync();
+
+        if (otherTokens.Count > 0)
+        {
+            var eventTitle = eventId.HasValue ? (await _context.Events.FindAsync(eventId.Value))?.Title : null;
+            var pushTitle = "Корзина продуктов";
+            var pushBody = !string.IsNullOrEmpty(eventTitle)
+                ? $"В мероприятие «{eventTitle}» добавлен новый товар: {itemTitle}"
+                : $"В корзину добавлен новый товар: {itemTitle}";
+
+            await _pushService.SendPushNotificationAsync(otherTokens, pushTitle, pushBody, new
+            {
+                type = "item_added",
+                familyId = familyId,
+                eventId = eventId
+            });
+        }
+    }
+
+    private async Task NotifyItemRemovedIfTakenAsync(CartItem item, Guid currentUserId)
+    {
+        if (item.TakenByUserId.HasValue && item.TakenByUserId.Value != currentUserId)
+        {
+            var takenUser = await _context.Users.FindAsync(item.TakenByUserId.Value);
+            if (!string.IsNullOrWhiteSpace(takenUser?.ExpoPushToken))
+            {
+                var pushTitle = "Внимание: товар убран";
+                var pushBody = $"Товар «{item.Title}», который вы собирались купить, был убран из корзины";
+                await _pushService.SendPushNotificationAsync(new[] { takenUser.ExpoPushToken }, pushTitle, pushBody, new
+                {
+                    type = "item_removed",
+                    familyId = item.FamilyId,
+                    eventId = item.EventId,
+                    title = item.Title
+                });
+            }
+        }
+    }
+
     private static CartItemDto MapCartItemDto(CartItem c, string? overrideTakenByName = null)
     {
         return new CartItemDto
@@ -691,6 +794,7 @@ public class CartController : ControllerBase
             Count = c.Quantity,
             Status = c.Status,
             AssignedToUserId = c.TakenByUserId,
+            AddedByUserId = c.AddedByUserId,
             TakenByName = overrideTakenByName ?? c.TakenByUser?.DisplayName,
             IsBought = c.IsBought,
             EventId = c.EventId,

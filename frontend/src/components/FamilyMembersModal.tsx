@@ -150,6 +150,8 @@ export const FamilyMembersModal: React.FC<FamilyMembersModalProps> = ({
                 style={styles.membersScroll}
                 contentContainerStyle={styles.membersList}
                 showsVerticalScrollIndicator={false}
+                nestedScrollEnabled={true}
+                keyboardShouldPersistTaps="handled"
               >
                 {family.members.map((member) => {
                   const isMe = member.id === currentUser.id;
@@ -187,8 +189,9 @@ export const FamilyMembersModal: React.FC<FamilyMembersModalProps> = ({
                         <View style={styles.memberInfo}>
                           <View style={styles.nameRow}>
                             <Text
-                              style={[styles.memberName, { color: colors.textDark }]}
+                              style={[styles.memberName, { color: colors.textDark, flexShrink: 1 }]}
                               numberOfLines={1}
+                              ellipsizeMode="tail"
                             >
                               {member.name}
                             </Text>
@@ -196,7 +199,7 @@ export const FamilyMembersModal: React.FC<FamilyMembersModalProps> = ({
                               <View
                                 style={[
                                   styles.meBadge,
-                                  { backgroundColor: colors.lime },
+                                  { backgroundColor: colors.lime, flexShrink: 0 },
                                 ]}
                               >
                                 <Text
@@ -205,7 +208,7 @@ export const FamilyMembersModal: React.FC<FamilyMembersModalProps> = ({
                                     { color: colors.limeDark },
                                   ]}
                                 >
-                                  Вы
+                                  (Вы)
                                 </Text>
                               </View>
                             )}
@@ -391,11 +394,14 @@ const styles = StyleSheet.create({
   },
   memberInfo: {
     flex: 1,
+    minWidth: 0,
   },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
+    minWidth: 0,
   },
   memberName: {
     fontSize: 14,

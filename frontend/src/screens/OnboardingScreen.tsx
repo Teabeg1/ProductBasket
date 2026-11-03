@@ -30,6 +30,7 @@ export const OnboardingScreen: React.FC = () => {
   const [familyNameInput, setFamilyNameInput] = useState('');
   const [pinDigits, setPinDigits] = useState(''); // 6-значный случайный код (буквы и цифры)
   const [isPinFocused, setIsPinFocused] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
 
   const pinInputRef = useRef<any>(null);
 
@@ -64,6 +65,7 @@ export const OnboardingScreen: React.FC = () => {
   };
 
   const executeJoinFamily = async (codeToJoin: string) => {
+    if (isJoining) return;
     Keyboard.dismiss();
     const cleanCode = codeToJoin.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (cleanCode.length === 0) {
@@ -71,13 +73,16 @@ export const OnboardingScreen: React.FC = () => {
       return;
     }
 
+    setIsJoining(true);
     let success = false;
     try {
       success = await joinFamilyWithCode(cleanCode);
     } catch (e: any) {
+      setIsJoining(false);
       showAlert('Ошибка вступления', e.message || 'Не удалось присоединиться к группе');
       return;
     }
+    setIsJoining(false);
 
     if (success) {
       showAlert(
@@ -108,7 +113,7 @@ export const OnboardingScreen: React.FC = () => {
     setPinDigits(sanitized);
 
     // Автоматическая отправка при вводе 6-го символа
-    if (sanitized.length === 6) {
+    if (sanitized.length === 6 && !isJoining) {
       setTimeout(() => {
         executeJoinFamily(sanitized);
       }, 100);
@@ -367,6 +372,7 @@ export const OnboardingScreen: React.FC = () => {
                     autoCapitalize="characters"
                     autoCorrect={false}
                     maxLength={6}
+                    editable={!isJoining}
                     autoFocus
                   />
                 </View>
@@ -376,9 +382,10 @@ export const OnboardingScreen: React.FC = () => {
               <TouchableOpacity
                 style={[
                   styles.pasteBtn,
-                  { backgroundColor: colors.blueLight, borderColor: colors.blue },
+                  { backgroundColor: colors.blueLight, borderColor: colors.blue, opacity: isJoining ? 0.5 : 1 },
                 ]}
                 activeOpacity={0.7}
+                disabled={isJoining}
                 onPress={handlePasteFromClipboard}
               >
                 <ClipboardIcon size={15} color={colors.blue} style={{ marginRight: 6 }} />
@@ -392,10 +399,12 @@ export const OnboardingScreen: React.FC = () => {
                   styles.joinSubmitBtn,
                   {
                     backgroundColor:
-                      pinDigits.length === 6 ? colors.primary : colors.cardSecondary,
+                      pinDigits.length === 6 && !isJoining ? colors.primary : colors.cardSecondary,
+                    opacity: isJoining ? 0.6 : 1,
                   },
                 ]}
                 activeOpacity={0.8}
+                disabled={isJoining || pinDigits.length !== 6}
                 onPress={handleJoinFamily}
               >
                 <Text
@@ -403,11 +412,11 @@ export const OnboardingScreen: React.FC = () => {
                     styles.joinSubmitBtnText,
                     {
                       color:
-                        pinDigits.length === 6 ? '#FFFFFF' : colors.textSecondary,
+                        pinDigits.length === 6 && !isJoining ? '#FFFFFF' : colors.textSecondary,
                     },
                   ]}
                 >
-                  {t('joinFamilySubmitBtn')}
+                  {isJoining ? 'Вступление...' : t('joinFamilySubmitBtn')}
                 </Text>
               </TouchableOpacity>
 

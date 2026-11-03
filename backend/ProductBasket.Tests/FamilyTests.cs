@@ -90,7 +90,7 @@ public class FamilyTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task RemoveMember_PurgesAssignedProducts()
+    public async Task RemoveMember_ResetsAssignedProductsToUnassigned()
     {
         var (userAClient, userAAuth) = await CreateAuthenticatedUserAsync("UserA");
         var famRes = await userAClient.PostAsJsonAsync("/api/family/create", new CreateFamilyRequest { Name = "Fam" });
@@ -113,11 +113,41 @@ public class FamilyTests : IClassFixture<CustomWebApplicationFactory>
         var removeRes = await userAClient.DeleteAsync($"/api/family/{family.FamilyId}/members/{userBAuth.User.Id}");
         Assert.Equal(HttpStatusCode.OK, removeRes.StatusCode);
 
-        // В корзине товары User B должны быть автоматически удалены
+        // В корзине товары User B НЕ удаляются, а их назначенный ответственный сбрасывается в null (Sprint 4 Block 4.1)
         var cartRes = await userAClient.GetAsync($"/api/cart?familyId={family.FamilyId}");
         var cartItems = await cartRes.Content.ReadFromJsonAsync<List<CartItemDto>>();
         Assert.NotNull(cartItems);
-        Assert.DoesNotContain(cartItems, c => c.Id == item.Id);
+        var remaining = Assert.Single(cartItems);
+        Assert.Equal(item.Id, remaining.Id);
+        Assert.Null(remaining.AssignedToUserId);
+        Assert.Equal("Pending", remaining.Status);
+    }
+
+    [Fact]
+    public async Task JoinFamily_RepeatedCalls_ReturnsOkIdempotent()
+    {
+        var (creatorClient, _) = await CreateAuthenticatedUserAsync("CreatorIdemp");
+        var createRes = await creatorClient.PostAsJsonAsync("/api/family/create", new CreateFamilyRequest
+        {
+            Name = "Группа Идемпотент"
+        });
+        var family = await createRes.Content.ReadFromJsonAsync<FamilyResponse>();
+
+        var (joinerClient, _) = await CreateAuthenticatedUserAsync("JoinerIdemp");
+
+        // First join
+        var joinRes1 = await joinerClient.PostAsJsonAsync("/api/family/join", new JoinFamilyRequest
+        {
+            InviteCode = family!.InviteCode
+        });
+        Assert.Equal(HttpStatusCode.OK, joinRes1.StatusCode);
+
+        // Immediate second join (duplicate/race) - MUST return 200 OK without 500
+        var joinRes2 = await joinerClient.PostAsJsonAsync("/api/family/join", new JoinFamilyRequest
+        {
+            InviteCode = family.InviteCode
+        });
+        Assert.Equal(HttpStatusCode.OK, joinRes2.StatusCode);
     }
 
     [Fact]

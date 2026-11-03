@@ -27,12 +27,14 @@ export interface AuthResponse {
 export interface LoginRequest {
   email: string;
   password: string;
+  pushToken?: string;
 }
 
 export interface RegisterRequest {
   displayName: string;
   email: string;
   password: string;
+  pushToken?: string;
 }
 
 export interface FamilyDto {
@@ -206,6 +208,46 @@ export const AuthService = {
       throw new Error(errorMsg);
     }
     return await res.json();
+  },
+
+  // Сохранение Expo Push Token на сервере (POST /api/auth/push-token)
+  async savePushToken(pushToken: string): Promise<boolean> {
+    const token = await this.getToken();
+    if (!token || !pushToken) return false;
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/push-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ pushToken }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  // Отправка тестового пуш-уведомления
+  async testPushNotification(): Promise<{ success: boolean; message: string }> {
+    const token = await this.getToken();
+    if (!token) return { success: false, message: 'Пользователь не авторизован' };
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/test-push`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { success: false, message: data.message || 'Ошибка отправки тестового уведомления' };
+      }
+      return { success: true, message: data.message || 'Тестовое уведомление отправлено' };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Ошибка сети' };
+    }
   },
 };
 
@@ -430,6 +472,7 @@ export interface CartItemDto {
   takenByName?: string;
   isBought: boolean;
   eventId?: string;
+  addedByUserId?: string;
 }
 
 export const CartService = {

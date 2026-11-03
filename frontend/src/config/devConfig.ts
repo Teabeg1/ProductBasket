@@ -19,6 +19,6 @@ export const EMPTY_USER: DevUser = {
   familyId: null,
   familyName: null,
   avatarChar: '?',
-  avatarBg: '#E0E7FF',
-  avatarColor: '#3730A3',
+  avatarBg: '#FCE7F3',
+  avatarColor: '#9D174D',
 };

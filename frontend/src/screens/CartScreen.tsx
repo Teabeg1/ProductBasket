@@ -6,6 +6,7 @@ import {
   Image,
   TouchableOpacity,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { AppText as Text } from '../components/AppText';
 import {
@@ -19,6 +20,7 @@ import {
   Sparkles,
   RefreshCw,
   Shield,
+  ArrowLeft,
 } from 'lucide-react-native';
 import { useApp, type CatalogProduct, type FamilyState } from '../context/AppContext';
 import { PRODUCT_IMAGES } from '../constants/productImages';
@@ -133,8 +135,9 @@ export const CartScreen: React.FC<CartScreenProps> = ({
               activeOpacity={0.7}
               onPress={openMainCart}
             >
+              <ArrowLeft size={14} color={colors.primary} strokeWidth={2.5} style={{ marginRight: 5 }} />
               <Text style={[styles.returnMainBtnText, { color: colors.primary }]}>
-                ← К общей
+                К общей
               </Text>
             </TouchableOpacity>
           )}
@@ -254,7 +257,14 @@ export const CartScreen: React.FC<CartScreenProps> = ({
               const boughtCount = boughtCartItems.reduce((sum, it) => sum + it.count, 0);
               const inCartItem = activeCartItems[0] || boughtCartItems[0] || cartItems[prod.id];
               const isBought = count === 0 && boughtCount > 0;
-              const targetCartId = activeCartItems[0]?.id || boughtCartItems[0]?.id || prod.id;
+              // Изоляция владения добавленным количеством (Sprint 4 Block 4.2)
+              const myActiveItems = activeCartItems.filter((it) => {
+                const isAuthorMember = !it.addedByUserId || family?.members.some((m) => m.id.toLowerCase() === it.addedByUserId?.toLowerCase());
+                return (it.addedByUserId && it.addedByUserId.toLowerCase() === currentUser.id?.toLowerCase()) || !isAuthorMember;
+              });
+              const myCount = myActiveItems.reduce((sum, it) => sum + it.count, 0);
+              const myTargetCartId = myActiveItems[0]?.id || null;
+              const targetCartId = myTargetCartId;
               const b64 = prod.imageKey ? PRODUCT_IMAGES[prod.imageKey] : null;
               const imageUri = b64 ? `data:image/jpeg;base64,${b64}` : null;
               const isCustom =
@@ -372,9 +382,21 @@ export const CartScreen: React.FC<CartScreenProps> = ({
                   ) : (
                     <View style={styles.actionCol}>
                       <TouchableOpacity
-                        style={[styles.trashBtn, { backgroundColor: colors.errorLight }]}
+                        style={[
+                          styles.trashBtn,
+                          { backgroundColor: colors.errorLight, opacity: myCount > 0 ? 1 : 0.4 },
+                        ]}
                         activeOpacity={0.7}
-                        onPress={() => deleteFromCart(targetCartId)}
+                        onPress={() => {
+                          if (myCount > 0 && myTargetCartId) {
+                            deleteFromCart(myTargetCartId);
+                          } else {
+                            Alert.alert(
+                              'Ограничение',
+                              'Вы можете удалять только то количество товара, которое добавили лично вы.'
+                            );
+                          }
+                        }}
                       >
                         <Trash2 size={13} color={colors.error} />
                       </TouchableOpacity>
@@ -385,8 +407,17 @@ export const CartScreen: React.FC<CartScreenProps> = ({
                         ]}
                       >
                         <TouchableOpacity
-                          style={styles.counterBtn}
-                          onPress={() => decrementCartItem(targetCartId)}
+                          style={[styles.counterBtn, { opacity: myCount > 0 ? 1 : 0.4 }]}
+                          onPress={() => {
+                            if (myCount > 0 && myTargetCartId) {
+                              decrementCartItem(myTargetCartId);
+                            } else {
+                              Alert.alert(
+                                'Ограничение',
+                                'Вы можете уменьшать только то количество товара, которое добавили лично вы.'
+                              );
+                            }
+                          }}
                         >
                           <Minus size={12} color={colors.primary} strokeWidth={2.5} />
                         </TouchableOpacity>
@@ -499,13 +530,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   returnMainBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
     marginLeft: 8,
   },
   returnMainBtnText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
   },
   familyBar: {

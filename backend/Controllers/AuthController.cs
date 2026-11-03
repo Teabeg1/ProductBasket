@@ -18,17 +18,20 @@ public class AuthController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ITokenService _tokenService;
     private readonly IHubContext<CartHub> _hubContext;
+    private readonly IPushNotificationService _pushService;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
         AppDbContext context,
         ITokenService tokenService,
         IHubContext<CartHub> hubContext,
+        IPushNotificationService pushService,
         ILogger<AuthController> logger)
     {
         _context = context;
         _tokenService = tokenService;
         _hubContext = hubContext;
+        _pushService = pushService;
         _logger = logger;
     }
 
@@ -50,6 +53,7 @@ public class AuthController : ControllerBase
             DisplayName = request.DisplayName.Trim(),
             Email = cleanEmail,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
+            ExpoPushToken = !string.IsNullOrWhiteSpace(request.PushToken) ? request.PushToken.Trim() : null,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -86,6 +90,12 @@ public class AuthController : ControllerBase
         var familyId = activeMember?.FamilyId;
         var familyName = activeMember?.Family?.Name;
 
+        if (!string.IsNullOrWhiteSpace(request.PushToken) && user.ExpoPushToken != request.PushToken.Trim())
+        {
+            user.ExpoPushToken = request.PushToken.Trim();
+            await _context.SaveChangesAsync();
+        }
+
         var token = _tokenService.GenerateToken(user, familyId);
 
         return Ok(new AuthResponse
@@ -93,6 +103,53 @@ public class AuthController : ControllerBase
             Token = token,
             User = MapUserDto(user, familyId, familyName)
         });
+    }
+
+    /// <summary>
+    /// Сохранение Expo Push Token текущего пользователя
+    /// </summary>
+    [Authorize]
+    [HttpPost("push-token")]
+    public async Task<IActionResult> UpdatePushToken([FromBody] UpdatePushTokenRequest request)
+    {
+        var userId = GetCurrentUserId();
+        if (userId == null) return Unauthorized();
+
+        var user = await _context.Users.FindAsync(userId.Value);
+        if (user == null) return NotFound();
+
+        user.ExpoPushToken = request.PushToken.Trim();
+        await _context.SaveChangesAsync();
+
+        return Ok(new { success = true });
+    }
+
+    /// <summary>
+    /// Отправка тестового push-уведомления текущему пользователю
+    /// </summary>
+    [Authorize]
+    [HttpPost("test-push")]
+    public async Task<IActionResult> SendTestPush()
+    {
+        var userId = GetCurrentUserId();
+        if (userId == null) return Unauthorized();
+
+        var user = await _context.Users.FindAsync(userId.Value);
+        if (user == null) return NotFound();
+
+        if (string.IsNullOrWhiteSpace(user.ExpoPushToken))
+        {
+            return BadRequest(new { message = "Push-токен для вашего аккаунта не зарегистрирован на телефоне." });
+        }
+
+        await _pushService.SendPushNotificationAsync(
+            new[] { user.ExpoPushToken },
+            "Проверка уведомлений",
+            "Push-уведомления успешно подключены и работают!",
+            new { type = "test", timestamp = DateTime.UtcNow }
+        );
+
+        return Ok(new { success = true, message = "Тестовое push-уведомление отправлено на телефон" });
     }
 
     /// <summary>
@@ -289,8 +346,8 @@ public class AuthController : ControllerBase
             Email = user.Email,
             AvatarUrl = user.AvatarUrl,
             AvatarChar = firstChar,
-            AvatarBg = "#E0E7FF",
-            AvatarColor = "#3730A3",
+            AvatarBg = "#FCE7F3",
+            AvatarColor = "#9D174D",
             FamilyId = familyId,
             FamilyName = familyName
         };

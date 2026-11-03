@@ -15,6 +15,8 @@ public class RegisterRequest
     [Required(ErrorMessage = "Пароль обязателен для заполнения")]
     [MinLength(6, ErrorMessage = "Пароль должен содержать минимум 6 символов")]
     public string Password { get; set; } = string.Empty;
+
+    public string? PushToken { get; set; }
 }
 
 public class LoginRequest
@@ -25,6 +27,14 @@ public class LoginRequest
 
     [Required(ErrorMessage = "Пароль обязателен для заполнения")]
     public string Password { get; set; } = string.Empty;
+
+    public string? PushToken { get; set; }
+}
+
+public class UpdatePushTokenRequest
+{
+    [Required]
+    public string PushToken { get; set; } = string.Empty;
 }
 
 public class AuthResponse

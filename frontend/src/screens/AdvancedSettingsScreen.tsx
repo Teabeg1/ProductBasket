@@ -6,20 +6,19 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { AppText as Text } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
   Bell,
-  CheckCircle2,
-  Volume2,
   ChevronRight,
   Shield,
   Trash2,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
-import { useApp } from '../context/AppContext';
+import { useApp, registerAndSavePushToken } from '../context/AppContext';
 import { AuthService } from '../services/api';
 import { TextScaleSlider } from '../components/TextScaleSlider';
 import type { AuthNavigationProp } from '../navigation/types';
@@ -29,8 +28,24 @@ export const AdvancedSettingsScreen: React.FC = () => {
   const { colors, t, logout } = useApp();
 
   const [pushEnabled, setPushEnabled] = useState(true);
-  const [takeProductNotify, setTakeProductNotify] = useState(true);
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [testingPush, setTestingPush] = useState(false);
+
+  const handleTestPush = async () => {
+    setTestingPush(true);
+    try {
+      await registerAndSavePushToken().catch(() => {});
+      const res = await AuthService.testPushNotification();
+      if (res.success) {
+        Alert.alert('Push-уведомление', res.message || 'Тестовое push-уведомление успешно отправлено на устройство.');
+      } else {
+        Alert.alert('Push-уведомление', res.message || 'Не удалось отправить push-уведомление.');
+      }
+    } catch (e: any) {
+      Alert.alert('Ошибка', e?.message || 'Не удалось отправить push-уведомление.');
+    } finally {
+      setTestingPush(false);
+    }
+  };
 
   const handleDeleteAccount = () => {
     Alert.alert(
@@ -107,37 +122,29 @@ export const AdvancedSettingsScreen: React.FC = () => {
 
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-            <View style={styles.toggleRow}>
+            <TouchableOpacity
+              style={styles.actionRow}
+              activeOpacity={0.7}
+              disabled={testingPush}
+              onPress={handleTestPush}
+            >
               <View style={styles.rowLeft}>
-                <CheckCircle2 size={18} color={colors.textDark} style={{ marginRight: 12 }} />
-                <Text style={[styles.rowLabel, { color: colors.textDark }]}>
-                  {t('notifyItemTaken')}
-                </Text>
+                <Bell size={18} color={colors.primary} style={{ marginRight: 12 }} />
+                <View>
+                  <Text style={[styles.rowLabel, { color: colors.textDark }]}>
+                    Проверить push-уведомление
+                  </Text>
+                  <Text style={[styles.rowSubtitle, { color: colors.textMuted }]}>
+                    Отправить тестовый push на телефон
+                  </Text>
+                </View>
               </View>
-              <Switch
-                value={takeProductNotify}
-                onValueChange={setTakeProductNotify}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor="#FFFFFF"
-              />
-            </View>
-
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            <View style={styles.toggleRow}>
-              <View style={styles.rowLeft}>
-                <Volume2 size={18} color={colors.textDark} style={{ marginRight: 12 }} />
-                <Text style={[styles.rowLabel, { color: colors.textDark }]}>
-                  {t('notifySound')}
-                </Text>
-              </View>
-              <Switch
-                value={soundEnabled}
-                onValueChange={setSoundEnabled}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor="#FFFFFF"
-              />
-            </View>
+              {testingPush ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <ChevronRight size={16} color={colors.textMuted} />
+              )}
+            </TouchableOpacity>
           </View>
         </View>
 

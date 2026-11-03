@@ -7,6 +7,25 @@ public static class DbInitializer
 {
     public static async Task InitializeAsync(AppDbContext context)
     {
+        if (context.Database.IsRelational())
+        {
+            try
+            {
+                await context.Database.ExecuteSqlRawAsync(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS expo_push_token character varying(255);");
+                await context.Database.ExecuteSqlRawAsync(
+                    "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS added_by_user_id uuid REFERENCES users(id) ON DELETE SET NULL;");
+                await context.Database.ExecuteSqlRawAsync(
+                    "CREATE INDEX IF NOT EXISTS ix_cart_items_added_by_user_id ON cart_items (added_by_user_id);");
+                await context.Database.ExecuteSqlRawAsync(
+                    "UPDATE cart_items SET added_by_user_id = (SELECT user_id FROM family_members WHERE family_id = cart_items.family_id ORDER BY joined_at LIMIT 1) WHERE added_by_user_id IS NULL;");
+            }
+            catch
+            {
+                // Ignore if running without ALTER rights or in-memory
+            }
+        }
+
         // Seeding default catalog products
         if (!await context.Products.AnyAsync(p => p.FamilyId == null))
         {

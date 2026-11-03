@@ -1,12 +1,71 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Alert } from 'react-native';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import { Alert, AppState, Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { EMPTY_USER, type DevUser } from '../config/devConfig';
 import { getThemeColors, type AppTheme } from '../constants/theme';
 import { TRANSLATIONS, type Language } from '../constants/i18n';
 import { FamilyService, AuthService, CartService, EventsService, ProductsService, type AuthResponse } from '../services/api';
 import { SignalRService } from '../services/signalr';
+
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
+
+export async function registerAndSavePushToken(): Promise<string | null> {
+  if (Platform.OS === 'web') return null;
+  try {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'default',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
+      }).catch(() => {});
+    }
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+      console.warn('[PUSH] Permission not granted:', finalStatus);
+      return null;
+    }
+
+    let tokenData: Notifications.ExpoPushToken | null = null;
+    try {
+      tokenData = await Notifications.getExpoPushTokenAsync({
+        projectId: '7c1e34a6-4444-4e4b-9111-d07f354f3bfa',
+      });
+    } catch (e1) {
+      try {
+        tokenData = await Notifications.getExpoPushTokenAsync();
+      } catch (e2) {
+        console.warn('[PUSH] Could not get push token:', e1, e2);
+      }
+    }
+
+    if (tokenData?.data) {
+      await AuthService.savePushToken(tokenData.data);
+      console.log('[PUSH] Push token successfully registered and saved:', tokenData.data);
+      return tokenData.data;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[PUSH] Could not register push token:', err);
+    return null;
+  }
+}
 
 export interface CatalogProduct {
   id: string;
@@ -25,6 +84,7 @@ export interface CartItem {
   count: number;
   assignedToUserId: string | null; // id пользователя, который взял товар
   isBought?: boolean; // куплен ли товар в магазине
+  addedByUserId?: string | null; // id пользователя, который добавил товар (Sprint 4 Block 4.2)
 }
 
 export interface AppEvent {
@@ -228,10 +288,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Мероприятия
   const [events, setEvents] = useState<AppEvent[]>([]);
 
-  const activeFamilyIdRef = React.useRef(activeFamilyId);
+  const activeFamilyIdRef = useRef(activeFamilyId);
   activeFamilyIdRef.current = activeFamilyId;
-  const currentUserIdRef = React.useRef(currentUser.id);
+  const currentUserIdRef = useRef(currentUser.id);
   currentUserIdRef.current = currentUser.id;
+  const joinFamilyInFlightRef = useRef<Record<string, Promise<boolean> | undefined>>({});
 
   const refreshEvents = async (famId?: string) => {
     try {
@@ -298,6 +359,77 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // Восстановление соединения и обновление корзины при возвращении приложения из фона (например, когда с ПК добавили товар, а пользователь вернулся в приложение на телефоне)
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', async (nextState) => {
+      if (nextState === 'active') {
+        const famId = activeFamilyIdRef.current;
+        const uId = currentUserIdRef.current;
+        if (famId && uId) {
+          try {
+            const token = await AuthService.getToken();
+            if (token) {
+              await SignalRService.start().catch(() => {});
+              await SignalRService.joinFamily(famId).catch(() => {});
+            }
+
+            const freshItems = await CartService.getCart(famId).catch(() => null);
+            if (Array.isArray(freshItems)) {
+              const mapped: Record<string, CartItem> = {};
+              freshItems.forEach((c) => {
+                const lowerId = c.id.toLowerCase();
+                mapped[lowerId] = {
+                  id: lowerId,
+                  title: c.title,
+                  unit: c.unit,
+                  imageKey: c.imageKey || '',
+                  emoji: c.emoji || '📦',
+                  count: c.count,
+                  assignedToUserId: c.assignedToUserId ? c.assignedToUserId.toLowerCase() : (c.takenByUserId ? c.takenByUserId.toLowerCase() : null),
+                  isBought: c.isBought,
+                  addedByUserId: c.addedByUserId ? c.addedByUserId.toLowerCase() : null,
+                };
+              });
+              setCarts((prev) => ({
+                ...prev,
+                [famId.toLowerCase()]: mapped,
+              }));
+            }
+
+            refreshEvents(famId).catch(() => {});
+            FamilyService.getMembers(famId).then((cloudMembers) => {
+              if (Array.isArray(cloudMembers) && cloudMembers.length > 0) {
+                const mappedMembers = cloudMembers.map((m: any) => ({
+                  id: String(m.id),
+                  name: m.displayName || m.name || 'Участник',
+                  email: m.email,
+                  avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
+                  avatarBg: m.avatarBg || '#FCE7F3',
+                  avatarColor: m.avatarColor || '#9D174D',
+                  familyId: famId,
+                  familyName: m.familyName || '',
+                }));
+                setFamilies((prev) =>
+                  prev.map((f) =>
+                    f.id.toLowerCase() === famId.toLowerCase() ? { ...f, members: mappedMembers } : f
+                  )
+                );
+              }
+            }).catch(() => {});
+
+            registerAndSavePushToken().catch(() => {});
+          } catch (e) {
+            console.warn('AppState resume sync failed:', e);
+          }
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   // Подключение к SignalR и синхронизация в реальном времени (корзина, статусы, семья, участники, мероприятия, свои товары)
   useEffect(() => {
     if (!currentUser.id || !activeFamilyId) return;
@@ -346,6 +478,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 count: c.count,
                 assignedToUserId: c.assignedToUserId ? c.assignedToUserId.toLowerCase() : (c.takenByUserId ? c.takenByUserId.toLowerCase() : null),
                 isBought: c.isBought,
+                addedByUserId: c.addedByUserId ? c.addedByUserId.toLowerCase() : null,
               };
             });
             const storageKey = (eventId || targetFamilyId).toLowerCase();
@@ -383,8 +516,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           name: data.member.displayName || data.member.name || 'Участник',
           email: data.member.email,
           avatarChar: data.member.avatarChar || (data.member.displayName || 'У')[0].toUpperCase(),
-          avatarBg: data.member.avatarBg || '#E0E7FF',
-          avatarColor: data.member.avatarColor || '#3730A3',
+          avatarBg: data.member.avatarBg || '#FCE7F3',
+          avatarColor: data.member.avatarColor || '#9D174D',
           familyId: data.familyId,
           familyName: data.member.familyName || '',
         };
@@ -420,8 +553,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 name: m.displayName || m.name || 'Участник',
                 email: m.email,
                 avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
-                avatarBg: m.avatarBg || '#E0E7FF',
-                avatarColor: m.avatarColor || '#3730A3',
+                avatarBg: m.avatarBg || '#FCE7F3',
+                avatarColor: m.avatarColor || '#9D174D',
                 familyId: data.familyId,
                 familyName: '',
               }));
@@ -493,25 +626,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           };
         });
 
-        // Снимаем товары, закрепленные за удаленным участником
+        // Снимаем товары, закрепленные за удаленным участником (во всех корзинах группы и мероприятий)
         setCarts((prev) => {
-          const matchedFamKey = Object.keys(prev).find((k) => k.toLowerCase() === data.familyId?.toLowerCase()) || data.familyId;
-          const currentFamCart = { ...(prev[matchedFamKey] || {}) };
-          let modified = false;
-          Object.keys(currentFamCart).forEach((k) => {
-            if (currentFamCart[k].assignedToUserId?.toLowerCase() === data.userId?.toLowerCase()) {
-              currentFamCart[k] = {
-                ...currentFamCart[k],
-                assignedToUserId: null,
-                isBought: false,
-              };
-              modified = true;
+          let hasAnyModified = false;
+          const updatedAll = { ...prev };
+          const targetFamPrefix = data.familyId?.toLowerCase();
+          Object.keys(updatedAll).forEach((cKey) => {
+            const currentFamCart = { ...(updatedAll[cKey] || {}) };
+            let modified = false;
+            Object.keys(currentFamCart).forEach((k) => {
+              if (currentFamCart[k].assignedToUserId?.toLowerCase() === data.userId?.toLowerCase()) {
+                currentFamCart[k] = {
+                  ...currentFamCart[k],
+                  assignedToUserId: null,
+                  isBought: false,
+                };
+                modified = true;
+              }
+            });
+            if (modified) {
+              updatedAll[cKey] = currentFamCart;
+              hasAnyModified = true;
             }
           });
-          if (modified) {
-            return { ...prev, [matchedFamKey]: currentFamCart };
-          }
-          return prev;
+          return hasAnyModified ? updatedAll : prev;
         });
 
         // Синхронизация актуальных участников с бэкенда
@@ -523,8 +661,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 name: m.displayName || m.name || 'Участник',
                 email: m.email,
                 avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
-                avatarBg: m.avatarBg || '#E0E7FF',
-                avatarColor: m.avatarColor || '#3730A3',
+                avatarBg: m.avatarBg || '#FCE7F3',
+                avatarColor: m.avatarColor || '#9D174D',
                 familyId: data.familyId,
                 familyName: '',
               }));
@@ -692,6 +830,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               count: c.count,
               assignedToUserId: c.assignedToUserId || c.takenByUserId || null,
               isBought: c.isBought,
+              addedByUserId: c.addedByUserId ? c.addedByUserId.toLowerCase() : null,
             };
           });
           setCarts((prev) => ({
@@ -800,8 +939,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         name: formattedName,
         email: cleanEmail,
         avatarChar: formattedName.charAt(0).toUpperCase(),
-        avatarBg: '#E0E7FF',
-        avatarColor: '#3730A3',
+        avatarBg: '#FCE7F3',
+        avatarColor: '#9D174D',
         familyId: null,
         familyName: null,
       };
@@ -854,8 +993,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             name: m.displayName || m.name || 'Участник',
             email: m.email,
             avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
-            avatarBg: m.avatarBg || '#E0E7FF',
-            avatarColor: m.avatarColor || '#3730A3',
+            avatarBg: m.avatarBg || '#FCE7F3',
+            avatarColor: m.avatarColor || '#9D174D',
             familyId: String(f.id),
             familyName: f.name,
           })),
@@ -918,8 +1057,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       name: cleanName,
       email: cleanEmail,
       avatarChar: cleanName.charAt(0).toUpperCase() || 'U',
-      avatarBg: (authData.user as any).avatarBg || '#E0E7FF',
-      avatarColor: (authData.user as any).avatarColor || '#3730A3',
+      avatarBg: (authData.user as any).avatarBg || '#FCE7F3',
+      avatarColor: (authData.user as any).avatarColor || '#9D174D',
       familyId: activeFam ? activeFam.id : null,
       familyName: activeFam ? activeFam.name : null,
     };
@@ -934,20 +1073,80 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     setActiveFamilyId(activeFam ? activeFam.id : null);
+    setCurrentUser(loggedUser);
+
     if (activeFam) {
       Storage.setItem('@product_basket_last_active_family', activeFam.id).catch(() => {});
       Storage.setItem(`@product_basket_last_active_family_${cleanEmail}`, activeFam.id).catch(() => {});
       setActiveCartId(activeFam.id);
-      setCarts((prev) => ({
-        ...prev,
-        [activeFam.id]: prev[activeFam.id] || {},
-      }));
-      refreshEvents().catch(() => {});
+
+      // Полная предварительная загрузка корзины, участников и мероприятий ПЕРЕД завершением входа,
+      // чтобы пользователь не видел мерцающий экран с задержкой появления товаров и ролей
+      try {
+        const [cloudItems, cloudMembers] = await Promise.all([
+          CartService.getCart(activeFam.id).catch(() => []),
+          FamilyService.getMembers(activeFam.id).catch(() => []),
+          refreshEvents(activeFam.id).catch(() => {}),
+        ]);
+
+        if (Array.isArray(cloudMembers) && cloudMembers.length > 0) {
+          const mappedMembers: DevUser[] = cloudMembers.map((m: any) => ({
+            id: String(m.id),
+            name: m.displayName || m.name || 'Участник',
+            email: m.email,
+            avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
+            avatarBg: m.avatarBg || '#FCE7F3',
+            avatarColor: m.avatarColor || '#9D174D',
+            familyId: activeFam.id,
+            familyName: activeFam.name,
+          }));
+          activeFam.members = mappedMembers;
+          userFamilies = userFamilies.map((f) =>
+            f.id.toLowerCase() === activeFam!.id.toLowerCase() ? { ...f, members: mappedMembers } : f
+          );
+          setFamilies(userFamilies);
+          setKnownFamilies((prev) => ({
+            ...prev,
+            [activeFam!.id]: { ...activeFam!, members: mappedMembers },
+          }));
+        }
+
+        const mappedCart: Record<string, CartItem> = {};
+        if (Array.isArray(cloudItems)) {
+          cloudItems.forEach((c) => {
+            const lowerId = c.id.toLowerCase();
+            mappedCart[lowerId] = {
+              id: lowerId,
+              title: c.title,
+              unit: c.unit,
+              imageKey: c.imageKey || '',
+              emoji: c.emoji || '📦',
+              count: c.count,
+              assignedToUserId: c.assignedToUserId ? c.assignedToUserId.toLowerCase() : (c.takenByUserId ? c.takenByUserId.toLowerCase() : null),
+              isBought: c.isBought,
+              addedByUserId: c.addedByUserId ? c.addedByUserId.toLowerCase() : null,
+            };
+          });
+        }
+
+        const targetCartKey = activeFam.id.toLowerCase();
+        setCarts((prev) => ({
+          ...prev,
+          [targetCartKey]: mappedCart,
+        }));
+
+        if (authData.token) {
+          await SignalRService.start().catch(() => {});
+          await SignalRService.joinFamily(activeFam.id).catch(() => {});
+        }
+      } catch (loadErr) {
+        console.warn('Preloading family data failed:', loadErr);
+      }
     } else {
       setActiveCartId('main');
     }
 
-    setCurrentUser(loggedUser);
+    registerAndSavePushToken().catch(() => {});
     return { user: loggedUser, hasFamily };
   };
 
@@ -959,8 +1158,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       name: cleanName,
       email: cleanEmail,
       avatarChar: cleanName.charAt(0).toUpperCase() || 'U',
-      avatarBg: '#E0E7FF',
-      avatarColor: '#3730A3',
+      avatarBg: '#FCE7F3',
+      avatarColor: '#9D174D',
       familyId: null,
       familyName: null,
     };
@@ -1161,118 +1360,133 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const formattedInput = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!formattedInput || formattedInput.length < 3) return false;
 
-    // 1. Ищем среди уже добавленных семей пользователя
-    const existingUserFamily = families.find(
-      (f) => f.code.toUpperCase().replace(/[^A-Z0-9]/g, '') === formattedInput
-    );
-    if (existingUserFamily) {
-      switchFamily(existingUserFamily.id);
-      return true;
+    const inFlight = joinFamilyInFlightRef.current[formattedInput];
+    if (inFlight) {
+      return inFlight;
     }
 
-    // 2. Ищем в общем реестре известных локальных семей
-    const foundEntry = Object.values(knownFamilies).find(
-      (f) => f.code.toUpperCase().replace(/[^A-Z0-9]/g, '') === formattedInput
-    );
-
-    if (foundEntry) {
-      const joinedUser: DevUser = {
-        ...currentUser,
-        familyId: foundEntry.id,
-        familyName: foundEntry.name,
-      };
-
-      const alreadyMember = foundEntry.members.some((m) => m.id === currentUser.id);
-      const updatedMembers = alreadyMember ? foundEntry.members : [...foundEntry.members, joinedUser];
-      const updatedFamily: FamilyState = {
-        ...foundEntry,
-        members: updatedMembers,
-      };
-
-      setKnownFamilies((prev) => ({
-        ...prev,
-        [foundEntry.id]: updatedFamily,
-      }));
-
-      setFamilies((prev) => [...prev.filter((f) => f.id !== foundEntry.id), updatedFamily]);
-      setActiveFamilyId(foundEntry.id);
-      setCurrentUser(joinedUser);
-      setActiveCartId(foundEntry.id);
-      setCarts((prev) => ({
-        ...prev,
-        [foundEntry.id]: prev[foundEntry.id] || {},
-      }));
-
-      Storage.setItem('@product_basket_last_active_family', foundEntry.id).catch(() => {});
-      return true;
-    }
-
-    // 3. Запрос к реальному бэкенду в облаке (POST /api/family/join)
-    try {
-      const serverFam = await FamilyService.joinFamily(formattedInput);
-      if (serverFam?.familyId) {
-        let membersList: DevUser[] = [];
-        try {
-          const cloudMembers = await FamilyService.getMembers(serverFam.familyId);
-          if (Array.isArray(cloudMembers) && cloudMembers.length > 0) {
-            membersList = cloudMembers.map((m: any) => ({
-              id: String(m.id),
-              name: m.displayName || m.name || 'Участник',
-              email: m.email,
-              avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
-              avatarBg: m.avatarBg || '#E0E7FF',
-              avatarColor: m.avatarColor || '#3730A3',
-              familyId: serverFam.familyId,
-              familyName: serverFam.name,
-            }));
-          }
-        } catch (memErr) {
-          console.warn('Failed to fetch members for joined family:', memErr);
-        }
-
-        const joinedUser: DevUser = {
-          ...currentUser,
-          familyId: serverFam.familyId,
-          familyName: serverFam.name,
-        };
-
-        if (!membersList.some((m) => m.id === joinedUser.id)) {
-          membersList.push(joinedUser);
-        }
-
-        const serverFamily: FamilyState = {
-          id: serverFam.familyId,
-          name: serverFam.name,
-          code: serverFam.inviteCode || formattedInput,
-          members: membersList,
-          customProducts: [],
-        };
-
-        setKnownFamilies((prev) => ({ ...prev, [serverFam.familyId]: serverFamily }));
-        setFamilies((prev) => {
-          const exists = prev.some((f) => f.id === serverFam.familyId);
-          return exists ? prev.map((f) => (f.id === serverFam.familyId ? serverFamily : f)) : [...prev, serverFamily];
-        });
-        setActiveFamilyId(serverFam.familyId);
-        setCurrentUser(joinedUser);
-        setActiveCartId(serverFam.familyId);
-        setCarts((prev) => ({ ...prev, [serverFam.familyId]: prev[serverFam.familyId] || {} }));
-
-        Storage.setItem('@product_basket_last_active_family', serverFam.familyId).catch(() => {});
-        if (currentUser.email) {
-          const userKey = `@product_basket_last_active_family_${currentUser.email.trim().toLowerCase()}`;
-          Storage.setItem(userKey, serverFam.familyId).catch(() => {});
-        }
-        SignalRService.joinFamily(serverFam.familyId).catch((e) => console.warn('SignalR joinFamily failed:', e));
-        refreshEvents().catch(() => {});
-
+    const executeTask = async (): Promise<boolean> => {
+      // 1. Ищем среди уже добавленных семей пользователя
+      const existingUserFamily = families.find(
+        (f) => f.code.toUpperCase().replace(/[^A-Z0-9]/g, '') === formattedInput
+      );
+      if (existingUserFamily) {
+        switchFamily(existingUserFamily.id);
         return true;
       }
-    } catch (e) {
-      console.warn('Backend joinFamily failed:', e);
-    }
 
-    return false;
+      // 2. Ищем в общем реестре известных локальных семей
+      const foundEntry = Object.values(knownFamilies).find(
+        (f) => f.code.toUpperCase().replace(/[^A-Z0-9]/g, '') === formattedInput
+      );
+
+      if (foundEntry) {
+        const joinedUser: DevUser = {
+          ...currentUser,
+          familyId: foundEntry.id,
+          familyName: foundEntry.name,
+        };
+
+        const alreadyMember = foundEntry.members.some((m) => m.id === currentUser.id);
+        const updatedMembers = alreadyMember ? foundEntry.members : [...foundEntry.members, joinedUser];
+        const updatedFamily: FamilyState = {
+          ...foundEntry,
+          members: updatedMembers,
+        };
+
+        setKnownFamilies((prev) => ({
+          ...prev,
+          [foundEntry.id]: updatedFamily,
+        }));
+
+        setFamilies((prev) => [...prev.filter((f) => f.id !== foundEntry.id), updatedFamily]);
+        setActiveFamilyId(foundEntry.id);
+        setCurrentUser(joinedUser);
+        setActiveCartId(foundEntry.id);
+        setCarts((prev) => ({
+          ...prev,
+          [foundEntry.id]: prev[foundEntry.id] || {},
+        }));
+
+        Storage.setItem('@product_basket_last_active_family', foundEntry.id).catch(() => {});
+        return true;
+      }
+
+      // 3. Запрос к реальному бэкенду в облаке (POST /api/family/join)
+      try {
+        const serverFam = await FamilyService.joinFamily(formattedInput);
+        if (serverFam?.familyId) {
+          let membersList: DevUser[] = [];
+          try {
+            const cloudMembers = await FamilyService.getMembers(serverFam.familyId);
+            if (Array.isArray(cloudMembers) && cloudMembers.length > 0) {
+              membersList = cloudMembers.map((m: any) => ({
+                id: String(m.id),
+                name: m.displayName || m.name || 'Участник',
+                email: m.email,
+                avatarChar: m.avatarChar || (m.displayName || 'У')[0].toUpperCase(),
+                avatarBg: m.avatarBg || '#FCE7F3',
+                avatarColor: m.avatarColor || '#9D174D',
+                familyId: serverFam.familyId,
+                familyName: serverFam.name,
+              }));
+            }
+          } catch (memErr) {
+            console.warn('Failed to fetch members for joined family:', memErr);
+          }
+
+          const joinedUser: DevUser = {
+            ...currentUser,
+            familyId: serverFam.familyId,
+            familyName: serverFam.name,
+          };
+
+          if (!membersList.some((m) => m.id === joinedUser.id)) {
+            membersList.push(joinedUser);
+          }
+
+          const serverFamily: FamilyState = {
+            id: serverFam.familyId,
+            name: serverFam.name,
+            code: serverFam.inviteCode || formattedInput,
+            members: membersList,
+            customProducts: [],
+          };
+
+          setKnownFamilies((prev) => ({ ...prev, [serverFam.familyId]: serverFamily }));
+          setFamilies((prev) => {
+            const exists = prev.some((f) => f.id === serverFam.familyId);
+            return exists ? prev.map((f) => (f.id === serverFam.familyId ? serverFamily : f)) : [...prev, serverFamily];
+          });
+          setActiveFamilyId(serverFam.familyId);
+          setCurrentUser(joinedUser);
+          setActiveCartId(serverFam.familyId);
+          setCarts((prev) => ({ ...prev, [serverFam.familyId]: prev[serverFam.familyId] || {} }));
+
+          Storage.setItem('@product_basket_last_active_family', serverFam.familyId).catch(() => {});
+          if (currentUser.email) {
+            const userKey = `@product_basket_last_active_family_${currentUser.email.trim().toLowerCase()}`;
+            Storage.setItem(userKey, serverFam.familyId).catch(() => {});
+          }
+          SignalRService.joinFamily(serverFam.familyId).catch((e) => console.warn('SignalR joinFamily failed:', e));
+          refreshEvents().catch(() => {});
+
+          return true;
+        }
+      } catch (e) {
+        console.warn('Backend joinFamily failed:', e);
+      }
+
+      return false;
+    };
+
+    const task = executeTask();
+    joinFamilyInFlightRef.current[formattedInput] = task;
+    try {
+      return await task;
+    } finally {
+      delete joinFamilyInFlightRef.current[formattedInput];
+    }
   };
 
   const updateFamilyName = (name: string) => {
@@ -1301,20 +1515,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const leaverId = currentUser.id.toLowerCase();
     const targetFamilyId = family.id.toLowerCase();
 
-    // Удаляем товары уходящего человека из корзины этой семьи
+    // Сбрасываем назначенные товары уходящего человека обратно в общий список покупок семьи и мероприятий (Sprint 4 Block 4.1)
     setCarts((prevCarts) => {
-      const familyCartKey = Object.keys(prevCarts).find((k) => k.toLowerCase() === targetFamilyId) || targetFamilyId;
-      const familyCart = prevCarts[familyCartKey] || {};
-      const filteredCart: Record<string, CartItem> = {};
-      for (const [itemId, item] of Object.entries(familyCart)) {
-        if (item.assignedToUserId?.toLowerCase() !== leaverId) {
-          filteredCart[itemId] = item;
+      const updatedAll = { ...prevCarts };
+      Object.keys(updatedAll).forEach((cKey) => {
+        const cCart = { ...(updatedAll[cKey] || {}) };
+        let modified = false;
+        Object.keys(cCart).forEach((itemId) => {
+          if (cCart[itemId].assignedToUserId?.toLowerCase() === leaverId) {
+            cCart[itemId] = {
+              ...cCart[itemId],
+              assignedToUserId: null,
+              isBought: false,
+            };
+            modified = true;
+          }
+        });
+        if (modified) {
+          updatedAll[cKey] = cCart;
         }
-      }
-      return {
-        ...prevCarts,
-        [familyCartKey]: filteredCart,
-      };
+      });
+      return updatedAll;
     });
 
     setKnownFamilies((prev) => {
@@ -1370,20 +1591,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const targetFamilyId = family.id.toLowerCase();
     const cleanMemberId = memberId.toLowerCase();
 
-    // Удаляем товары этого человека из корзины семьи
+    // Сбрасываем назначенные товары удаленного человека обратно в общий список покупок семьи и мероприятий (Sprint 4 Block 4.1)
     setCarts((prevCarts) => {
-      const matchedKey = Object.keys(prevCarts).find((k) => k.toLowerCase() === targetFamilyId) || targetFamilyId;
-      const familyCart = prevCarts[matchedKey] || {};
-      const filteredCart: Record<string, CartItem> = {};
-      for (const [itemId, item] of Object.entries(familyCart)) {
-        if (item.assignedToUserId?.toLowerCase() !== cleanMemberId) {
-          filteredCart[itemId] = item;
+      const updatedAll = { ...prevCarts };
+      Object.keys(updatedAll).forEach((cKey) => {
+        const cCart = { ...(updatedAll[cKey] || {}) };
+        let modified = false;
+        Object.keys(cCart).forEach((itemId) => {
+          if (cCart[itemId].assignedToUserId?.toLowerCase() === cleanMemberId) {
+            cCart[itemId] = {
+              ...cCart[itemId],
+              assignedToUserId: null,
+              isBought: false,
+            };
+            modified = true;
+          }
+        });
+        if (modified) {
+          updatedAll[cKey] = cCart;
         }
-      }
-      return {
-        ...prevCarts,
-        [matchedKey]: filteredCart,
-      };
+      });
+      return updatedAll;
     });
 
     setKnownFamilies((prev) => {
@@ -1614,6 +1842,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 count: c.count,
                 assignedToUserId: c.assignedToUserId ? c.assignedToUserId.toLowerCase() : (c.takenByUserId ? c.takenByUserId.toLowerCase() : null),
                 isBought: c.isBought,
+                addedByUserId: c.addedByUserId ? c.addedByUserId.toLowerCase() : null,
               };
             });
             setCarts((prev) => ({
@@ -1654,13 +1883,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || currentKey;
       const currentCart = { ...(prev[cartKey] || {}) };
 
-      // Ищем существующий НЕКУПЛЕННЫЙ товар, который не занят другим участником
+      // Ищем существующий НЕКУПЛЕННЫЙ товар, который не занят другим участником И добавлен текущим пользователем (Sprint 4 Block 4.2)
       const existingKey = Object.keys(currentCart).find((k) => {
         const c = currentCart[k];
         const cAssigned = c.assignedToUserId?.toLowerCase();
+        const cAdded = c.addedByUserId?.toLowerCase();
         return (
           !c.isBought &&
           (!cAssigned || cAssigned === uId) &&
+          cAdded === uId &&
           (k.toLowerCase() === item.id.toLowerCase() ||
             c.id.toLowerCase() === item.id.toLowerCase() ||
             c.title.trim().toLowerCase() === cleanTitle)
@@ -1669,9 +1900,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       if (existingKey) {
         const existing = currentCart[existingKey];
-        currentCart[existingKey] = { ...existing, count: existing.count + 1 };
+        currentCart[existingKey] = {
+          ...existing,
+          count: existing.count + 1,
+          addedByUserId: existing.addedByUserId || currentUser.id,
+        };
       } else {
-        // Создаем отдельный новый некупленный товар (Bug 14)
+        // Создаем отдельный новый некупленный товар с привязкой к currentUser.id (Sprint 4 Block 4.2)
         const uniqueKey = currentCart[item.id] ? `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` : item.id;
         currentCart[uniqueKey] = {
           ...item,
@@ -1679,6 +1914,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           count: 1,
           assignedToUserId: null,
           isBought: false,
+          addedByUserId: currentUser.id,
         };
       }
 
@@ -1722,6 +1958,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   ...itemData,
                   id: lowerCreatedId,
                   count: Math.max(createdItem.count || 1, itemData.count),
+                  addedByUserId: createdItem.addedByUserId ? createdItem.addedByUserId.toLowerCase() : itemData.addedByUserId,
                 };
                 return { ...prev, [cartKey]: currentCart };
               }
@@ -1743,29 +1980,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const currentKey = effectiveCartId;
     let serverTargetId = itemId;
+    const uId = currentUser.id?.toLowerCase();
 
     setCarts((prev) => {
       const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || currentKey;
       const currentCart = { ...(prev[cartKey] || {}) };
 
-      // Ищем сначала НЕКУПЛЕННЫЙ товар (по id, ключу или названию)
+      // Ищем сначала НЕКУПЛЕННЫЙ товар, принадлежащий текущему пользователю (или если автор покинул группу)
       let realKey = Object.keys(currentCart).find((k) => {
         const c = currentCart[k];
+        const cAdded = c.addedByUserId?.toLowerCase();
+        const isAuthorMember = !cAdded || family?.members.some((m) => m.id.toLowerCase() === cAdded);
+        const canManage = cAdded === uId || !isAuthorMember;
         return (
           !c.isBought &&
+          canManage &&
           (k.toLowerCase() === itemId.toLowerCase() ||
             c.id.toLowerCase() === itemId.toLowerCase() ||
             c.title.trim().toLowerCase() === itemId.trim().toLowerCase())
         );
       });
 
-      // Fallback ТОЛЬКО по точному GUID/ключу конкретной записи (не по названию, чтобы не списать купленный товар!)
+      // Fallback ТОЛЬКО по точному GUID/ключу конкретной записи своего товара (не по названию, чтобы не списать купленный товар!)
       if (!realKey) {
         realKey = Object.keys(currentCart).find((k) => {
           const c = currentCart[k];
+          const cAdded = c.addedByUserId?.toLowerCase();
+          const isAuthorMember = !cAdded || family?.members.some((m) => m.id.toLowerCase() === cAdded);
+          const canManage = cAdded === uId || !isAuthorMember;
           return (
-            k.toLowerCase() === itemId.toLowerCase() ||
-            c.id.toLowerCase() === itemId.toLowerCase()
+            canManage &&
+            (k.toLowerCase() === itemId.toLowerCase() ||
+              c.id.toLowerCase() === itemId.toLowerCase())
           );
         });
       }
@@ -1787,7 +2033,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     });
 
-    CartService.decrementItem(serverTargetId).catch((e) => console.warn('Cloud sync decrement failed:', e));
+    CartService.decrementItem(serverTargetId).catch((e) => {
+      console.warn('Cloud sync decrement failed:', e);
+      const targetFam = (isEventCart && activeEvent?.familyId) ? activeEvent.familyId : activeFamilyId;
+      if (targetFam) {
+        CartService.getCart(targetFam, isEventCart ? activeCartId : undefined).then((fresh) => {
+          if (Array.isArray(fresh)) {
+            const mapped: Record<string, CartItem> = {};
+            fresh.forEach((c) => {
+              const lowerId = c.id.toLowerCase();
+              mapped[lowerId] = {
+                id: lowerId,
+                title: c.title,
+                unit: c.unit,
+                imageKey: c.imageKey || '',
+                emoji: c.emoji || '📦',
+                count: c.count,
+                assignedToUserId: c.assignedToUserId ? c.assignedToUserId.toLowerCase() : (c.takenByUserId ? c.takenByUserId.toLowerCase() : null),
+                isBought: c.isBought,
+                addedByUserId: c.addedByUserId ? c.addedByUserId.toLowerCase() : null,
+              };
+            });
+            setCarts((p) => ({ ...p, [effectiveCartId]: mapped }));
+          }
+        }).catch(() => {});
+      }
+    });
   };
 
   const deleteFromCart = (itemId: string) => {
@@ -1800,29 +2071,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const currentKey = effectiveCartId;
     let serverTargetId = itemId;
+    const uId = currentUser.id?.toLowerCase();
 
     setCarts((prev) => {
       const cartKey = Object.keys(prev).find((k) => k.toLowerCase() === currentKey) || currentKey;
       const currentCart = { ...(prev[cartKey] || {}) };
 
-      // Ищем сначала НЕКУПЛЕННЫЙ товар
+      // Ищем сначала НЕКУПЛЕННЫЙ товар, принадлежащий текущему пользователю (или если автор покинул группу)
       let realKey = Object.keys(currentCart).find((k) => {
         const c = currentCart[k];
+        const cAdded = c.addedByUserId?.toLowerCase();
+        const isAuthorMember = !cAdded || family?.members.some((m) => m.id.toLowerCase() === cAdded);
+        const canManage = cAdded === uId || !isAuthorMember;
         return (
           !c.isBought &&
+          canManage &&
           (k.toLowerCase() === itemId.toLowerCase() ||
             c.id.toLowerCase() === itemId.toLowerCase() ||
             c.title.trim().toLowerCase() === itemId.trim().toLowerCase())
         );
       });
 
-      // Fallback ТОЛЬКО по точному GUID/ключу записи, ни в коем случае не по названию
+      // Fallback ТОЛЬКО по точному GUID/ключу записи своего товара, ни в коем случае не по названию
       if (!realKey) {
         realKey = Object.keys(currentCart).find((k) => {
           const c = currentCart[k];
+          const cAdded = c.addedByUserId?.toLowerCase();
+          const isAuthorMember = !cAdded || family?.members.some((m) => m.id.toLowerCase() === cAdded);
+          const canManage = cAdded === uId || !isAuthorMember;
           return (
-            k.toLowerCase() === itemId.toLowerCase() ||
-            c.id.toLowerCase() === itemId.toLowerCase()
+            canManage &&
+            (k.toLowerCase() === itemId.toLowerCase() ||
+              c.id.toLowerCase() === itemId.toLowerCase())
           );
         });
       }
@@ -1838,7 +2118,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     });
 
-    CartService.deleteItem(serverTargetId).catch((e) => console.warn('Cloud sync delete failed:', e));
+    CartService.deleteItem(serverTargetId).catch((e) => {
+      console.warn('Cloud sync delete failed:', e);
+      const targetFam = (isEventCart && activeEvent?.familyId) ? activeEvent.familyId : activeFamilyId;
+      if (targetFam) {
+        CartService.getCart(targetFam, isEventCart ? activeCartId : undefined).then((fresh) => {
+          if (Array.isArray(fresh)) {
+            const mapped: Record<string, CartItem> = {};
+            fresh.forEach((c) => {
+              const lowerId = c.id.toLowerCase();
+              mapped[lowerId] = {
+                id: lowerId,
+                title: c.title,
+                unit: c.unit,
+                imageKey: c.imageKey || '',
+                emoji: c.emoji || '📦',
+                count: c.count,
+                assignedToUserId: c.assignedToUserId ? c.assignedToUserId.toLowerCase() : (c.takenByUserId ? c.takenByUserId.toLowerCase() : null),
+                isBought: c.isBought,
+                addedByUserId: c.addedByUserId ? c.addedByUserId.toLowerCase() : null,
+              };
+            });
+            setCarts((p) => ({ ...p, [effectiveCartId]: mapped }));
+          }
+        }).catch(() => {});
+      }
+    });
   };
 
   // Распределение товара: взять себе или снять выбор

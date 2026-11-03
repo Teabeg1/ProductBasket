@@ -39,6 +39,9 @@ public class CartItem
     public Guid? TakenByUserId { get; set; }
     public User? TakenByUser { get; set; }
 
+    public Guid? AddedByUserId { get; set; }
+    public User? AddedByUser { get; set; }
+
     public bool IsBought { get; set; } = false;
 
     public Guid? EventId { get; set; }

@@ -84,6 +84,7 @@ export const FamilySwitcherModal: React.FC<FamilySwitcherModalProps> = ({
                 style={styles.familiesScroll}
                 contentContainerStyle={styles.familiesList}
                 showsVerticalScrollIndicator={false}
+                nestedScrollEnabled={true}
               >
                 {families.map((fam) => {
                   const isActive = fam.id.toLowerCase() === activeFamilyId?.toLowerCase();

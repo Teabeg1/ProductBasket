@@ -14,6 +14,7 @@ import { AppText as Text } from './AppText';
 import { X, Calendar as CalendarIcon, Users } from 'lucide-react-native';
 import { useApp } from '../context/AppContext';
 import { AppButton } from './AppButton';
+import { isStrictEmoji } from '../utils/emoji';
 
 interface CreateEventModalProps {
   visible: boolean;
@@ -50,8 +51,14 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(getFormattedToday());
   const [selectedEmoji, setSelectedEmoji] = useState('🎄');
+  const [customEmoji, setCustomEmoji] = useState('');
+  const [customEmojiError, setCustomEmojiError] = useState('');
 
   const handleCreate = () => {
+    if (customEmoji.trim() && !isStrictEmoji(customEmoji.trim())) {
+      setCustomEmojiError('Разрешены только эмодзи (буквы и цифры запрещены)');
+      return;
+    }
     const today = getFormattedToday();
     createEvent({
       title: title.trim() || 'Новое мероприятие',
@@ -62,6 +69,8 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     });
     setTitle('');
     setDate(today);
+    setCustomEmoji('');
+    setCustomEmojiError('');
     onClose();
   };
 
@@ -205,12 +214,16 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 </Text>
                 <View style={styles.emojiRow}>
                   {EMOJI_OPTIONS.map((emoji) => {
-                    const isSelected = emoji === selectedEmoji;
+                    const isSelected = emoji === selectedEmoji && !customEmoji;
                     return (
                       <TouchableOpacity
                         key={emoji}
                         activeOpacity={0.7}
-                        onPress={() => setSelectedEmoji(emoji)}
+                        onPress={() => {
+                          setSelectedEmoji(emoji);
+                          setCustomEmoji('');
+                          setCustomEmojiError('');
+                        }}
                         style={[
                           styles.emojiCell,
                           {
@@ -225,6 +238,45 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                     );
                   })}
                 </View>
+
+                {/* Ввод своего эмодзи со строгой валидацией */}
+                <View style={{ marginTop: 10 }}>
+                  <View
+                    style={[
+                      styles.inputBox,
+                      {
+                        backgroundColor: colors.cardSecondary,
+                        borderColor: customEmojiError ? colors.error : colors.border,
+                        height: 44,
+                      },
+                    ]}
+                  >
+                    <TextInput
+                      style={[styles.input, { color: colors.textDark, fontSize: 14 }]}
+                      value={customEmoji}
+                      onChangeText={(text) => {
+                        setCustomEmoji(text);
+                        if (!text.trim()) {
+                          setCustomEmojiError('');
+                          return;
+                        }
+                        if (isStrictEmoji(text.trim())) {
+                          setSelectedEmoji(text.trim());
+                          setCustomEmojiError('');
+                        } else {
+                          setCustomEmojiError('Разрешены только эмодзи (буквы и цифры запрещены)');
+                        }
+                      }}
+                      placeholder="Или введите свой эмодзи (напр. 🎉)"
+                      placeholderTextColor={colors.textMuted}
+                    />
+                  </View>
+                  {customEmojiError ? (
+                    <Text style={{ color: colors.error, fontSize: 12, marginTop: 4 }}>
+                      {customEmojiError}
+                    </Text>
+                  ) : null}
+                </View>
               </View>
 
               {/* Кнопка Создать */}
@@ -232,6 +284,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 <AppButton
                   title={t('createEventSubmitBtn')}
                   onPress={handleCreate}
+                  disabled={!!customEmojiError}
                 />
               </View>
             </View>

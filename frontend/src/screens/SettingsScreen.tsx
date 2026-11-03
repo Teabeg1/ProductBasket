@@ -160,7 +160,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     if (!family) return;
     Alert.alert(
       'Удалить из группы',
-      `Вы действительно хотите удалить ${member.name} (${member.email}) из группы «${family.name}»?\n\nВсе товары, которые выбрал(а) ${member.name}, будут удалены из корзины этой группы.`,
+      `Вы действительно хотите удалить ${member.name} (${member.email}) из группы «${family.name}»?\n\nТовары, которые собирался(-ась) купить ${member.name}, вернутся в общий список доступных покупок семьи.`,
       [
         { text: 'Отмена', style: 'cancel' },
         {
@@ -199,16 +199,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View
             style={[
               styles.accountAvatar,
-              { backgroundColor: currentUser.avatarBg },
+              { backgroundColor: currentUser.avatarBg || '#FCE7F3' },
             ]}
           >
             <Text
               style={[
                 styles.accountAvatarText,
-                { color: currentUser.avatarColor },
+                { color: currentUser.avatarColor || '#9D174D' },
               ]}
             >
-              {currentUser.avatarChar}
+              {currentUser.avatarChar || (currentUser.name ? currentUser.name[0].toUpperCase() : 'У')}
             </Text>
           </View>
           <View style={styles.accountMeta}>
@@ -532,7 +532,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   Выберите участника для исключения из «{family?.name}».
                 </Text>
 
-                <View style={styles.membersListContainer}>
+                <ScrollView
+                  style={styles.modalMembersScroll}
+                  contentContainerStyle={styles.modalMembersContent}
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={false}
+                >
                   {(() => {
                     const otherMembers = family?.members.filter((m) => m.id !== currentUser.id) || [];
                     if (otherMembers.length === 0) {
@@ -597,7 +602,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       </View>
                     ));
                   })()}
-                </View>
+                </ScrollView>
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -988,8 +993,12 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 16,
   },
-  membersListContainer: {
+  modalMembersScroll: {
+    maxHeight: 340,
+  },
+  modalMembersContent: {
     gap: 10,
+    paddingBottom: 10,
   },
   memberItemRow: {
     flexDirection: 'row',

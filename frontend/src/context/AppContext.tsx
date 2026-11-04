@@ -64,18 +64,38 @@ export async function registerAndSavePushToken(force = false): Promise<string | 
       return null;
     }
 
-    let tokenData: Notifications.ExpoPushToken | null = null;
+    let pushToken: string | null = null;
+    // 1. Сначала пробуем получить нативный FCM/APNS токен устройства (для standalone APK с google-services.json)
     try {
-      tokenData = await Notifications.getExpoPushTokenAsync();
-    } catch {
-      // Push notifications are unavailable in Expo Go on Android since SDK 53
+      const deviceToken = await Notifications.getDevicePushTokenAsync();
+      if (deviceToken?.data) {
+        pushToken = typeof deviceToken.data === 'string' ? deviceToken.data : JSON.stringify(deviceToken.data);
+        console.log('[PUSH] Got native device push token (' + deviceToken.type + '):', pushToken);
+      }
+    } catch (deviceTokenErr) {
+      console.log('[PUSH] getDevicePushTokenAsync error / fallback:', deviceTokenErr);
     }
 
-    if (tokenData?.data) {
-      await AuthService.savePushToken(tokenData.data).catch(() => {});
-      console.log('[PUSH] Push token successfully registered and saved:', tokenData.data);
+    // 2. Если нативный токен не получен (например, в Expo Go), пробуем Expo Push Token
+    if (!pushToken) {
+      try {
+        const expoToken = await Notifications.getExpoPushTokenAsync();
+        if (expoToken?.data) {
+          pushToken = expoToken.data;
+          console.log('[PUSH] Got Expo push token:', pushToken);
+        }
+      } catch (expoErr) {
+        console.log('[PUSH] getExpoPushTokenAsync error:', expoErr);
+      }
+    }
+
+    if (pushToken) {
+      await AuthService.savePushToken(pushToken).catch((err) => {
+        console.warn('[PUSH] Failed to save push token on backend:', err);
+      });
+      console.log('[PUSH] Push token successfully registered and saved:', pushToken);
       hasAttemptedPushRegistration = true;
-      return tokenData.data;
+      return pushToken;
     }
     return null;
   } catch {

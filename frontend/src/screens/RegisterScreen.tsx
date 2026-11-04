@@ -310,7 +310,7 @@ export const RegisterScreen: React.FC = () => {
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
               <Text style={styles.legalHeading}>1. Назначение сервиса</Text>
               <Text style={styles.legalParagraph}>
-                «Совместная корзина продуктов» — мобильный сервис для совместного планирования покупок и распределения обязанностей по приобретению товаров.
+                «Наша корзина» — мобильный сервис для совместного планирования покупок и распределения обязанностей по приобретению товаров.
               </Text>
 
               <Text style={styles.legalHeading}>2. Группа пользователей</Text>

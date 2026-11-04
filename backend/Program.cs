@@ -116,7 +116,7 @@ builder.Services.AddSwaggerGen(c =>
     {
         Title = "ProductBasket API",
         Version = "v1",
-        Description = "Серверный REST API и SignalR хаб для мобильного приложения «Совместная корзина продуктов»"
+        Description = "Серверный REST API и SignalR хаб для мобильного приложения «Наша корзина»"
     });
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme

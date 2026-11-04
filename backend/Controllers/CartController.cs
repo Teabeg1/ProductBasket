@@ -796,7 +796,7 @@ public class CartController : ControllerBase
         if (otherTokens.Count > 0)
         {
             var eventTitle = eventId.HasValue ? (await _context.Events.FindAsync(eventId.Value))?.Title : null;
-            var pushTitle = "Корзина продуктов";
+            var pushTitle = "Наша корзина";
             var pushBody = !string.IsNullOrEmpty(eventTitle)
                 ? $"В мероприятие «{eventTitle}» добавлен новый товар: {itemTitle}"
                 : $"В корзину добавлен новый товар: {itemTitle}";
@@ -847,7 +847,7 @@ public class CartController : ControllerBase
         if (otherTokens.Count > 0)
         {
             var eventTitle = eventId.HasValue ? (await _context.Events.FindAsync(eventId.Value))?.Title : null;
-            var pushTitle = "Корзина продуктов";
+            var pushTitle = "Наша корзина";
             var pushBody = !string.IsNullOrEmpty(eventTitle)
                 ? $"Из мероприятия «{eventTitle}» убран товар: {item.Title}"
                 : $"Из корзины убран товар: {item.Title}";

@@ -9,6 +9,7 @@ Thumbs.db
 .env.*.local
 *firebase-adminsdk*.json
 firebase-adminsdk.json
+*render-firebase-env*
 
 # ==========================================
 # 2. FRONTEND (React Native / Expo / Node.js)

@@ -244,7 +244,7 @@ public class CartController : ControllerBase
 
         if (request.Count <= 0)
         {
-            await NotifyItemRemovedIfTakenAsync(item, userId.Value);
+            await NotifyItemRemovedAsync(item, userId.Value);
             _context.CartItems.Remove(item);
             await _context.SaveChangesAsync();
             await BroadcastCartUpdatedAsync(familyId, eventId);
@@ -300,7 +300,7 @@ public class CartController : ControllerBase
 
         if (item.Quantity <= 1)
         {
-            await NotifyItemRemovedIfTakenAsync(item, userId.Value);
+            await NotifyItemRemovedAsync(item, userId.Value);
             _context.CartItems.Remove(item);
             await _context.SaveChangesAsync();
             await BroadcastCartUpdatedAsync(familyId, eventId);
@@ -354,7 +354,7 @@ public class CartController : ControllerBase
             }
         }
 
-        await NotifyItemRemovedIfTakenAsync(item, userId.Value);
+        await NotifyItemRemovedAsync(item, userId.Value);
         _context.CartItems.Remove(item);
         await _context.SaveChangesAsync();
 
@@ -812,23 +812,55 @@ public class CartController : ControllerBase
         }
     }
 
-    private async Task NotifyItemRemovedIfTakenAsync(CartItem item, Guid currentUserId)
+    private async Task NotifyItemRemovedAsync(CartItem item, Guid currentUserId)
     {
+        var familyId = item.FamilyId;
+        var eventId = item.EventId;
+
+        // 1. Если товар был взят другим пользователем («Куплю я»), отправляем ему персональное предупреждение
+        Guid? takenOtherUserId = null;
         if (item.TakenByUserId.HasValue && item.TakenByUserId.Value != currentUserId)
         {
-            var takenUser = await _context.Users.FindAsync(item.TakenByUserId.Value);
+            takenOtherUserId = item.TakenByUserId.Value;
+            var takenUser = await _context.Users.FindAsync(takenOtherUserId.Value);
             if (!string.IsNullOrWhiteSpace(takenUser?.ExpoPushToken))
             {
                 var pushTitle = "Внимание: товар убран";
                 var pushBody = $"Товар «{item.Title}», который вы собирались купить, был убран из корзины";
+                _logger.LogInformation("[PUSH] Dispatching taken item_removed push to user {UserId} for '{Title}'", takenOtherUserId.Value, item.Title);
                 await _pushService.SendPushNotificationAsync(new[] { takenUser.ExpoPushToken }, pushTitle, pushBody, new
                 {
                     type = "item_removed",
-                    familyId = item.FamilyId,
-                    eventId = item.EventId,
+                    familyId = familyId,
+                    eventId = eventId,
                     title = item.Title
                 });
             }
+        }
+
+        // 2. Всем остальным участникам группы (кроме удалившего и кроме того, кто уже получил персональный пуш выше)
+        var otherTokens = await _context.FamilyMembers
+            .Where(fm => fm.FamilyId == familyId && fm.UserId != currentUserId && (takenOtherUserId == null || fm.UserId != takenOtherUserId.Value) && !string.IsNullOrEmpty(fm.User.ExpoPushToken))
+            .Select(fm => fm.User.ExpoPushToken!)
+            .ToListAsync();
+
+        if (otherTokens.Count > 0)
+        {
+            var eventTitle = eventId.HasValue ? (await _context.Events.FindAsync(eventId.Value))?.Title : null;
+            var pushTitle = "Корзина продуктов";
+            var pushBody = !string.IsNullOrEmpty(eventTitle)
+                ? $"Из мероприятия «{eventTitle}» убран товар: {item.Title}"
+                : $"Из корзины убран товар: {item.Title}";
+
+            _logger.LogInformation("[PUSH] Dispatching item_removed push to {Count} family members for '{Title}'", otherTokens.Count, item.Title);
+
+            await _pushService.SendPushNotificationAsync(otherTokens, pushTitle, pushBody, new
+            {
+                type = "item_removed",
+                familyId = familyId,
+                eventId = eventId,
+                title = item.Title
+            });
         }
     }
 

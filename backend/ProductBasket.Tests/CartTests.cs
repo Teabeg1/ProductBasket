@@ -858,6 +858,11 @@ public class CartTests : IClassFixture<CustomWebApplicationFactory>
 
         var selfPush = _factory.PushService.Calls.FirstOrDefault(c => c.Tokens.Contains("ExponentPushToken[BobToken456]"));
         Assert.Null(selfPush);
+
+        // But Alice (the other family member) DOES receive notification that item was removed from the cart!
+        var alicePush = _factory.PushService.Calls.FirstOrDefault(c => c.Tokens.Contains("ExponentPushToken[AliceToken123]"));
+        Assert.NotNull(alicePush);
+        Assert.Contains("Из корзины убран товар: Кефир", alicePush.Body);
     }
 
     [Fact]

@@ -63,7 +63,6 @@ export const TRANSLATIONS = {
     notifyItemTaken: 'Оповещать о взятом товаре',
     notifySound: 'Звук при обновлении',
     securityHeader: 'АККАУНТ И БЕЗОПАСНОСТЬ',
-    changePassword: 'Сменить пароль',
     deleteAccount: 'Удалить аккаунт навсегда',
 
     // Onboarding Screen

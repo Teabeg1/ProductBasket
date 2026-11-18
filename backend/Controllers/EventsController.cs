@@ -112,6 +112,48 @@ public class EventsController : ControllerBase
     }
 
     /// <summary>
+    /// Переименование мероприятия
+    /// </summary>
+    [HttpPut("{id:guid}/title")]
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult<EventDto>> UpdateEventTitle([FromRoute] Guid id, [FromBody] UpdateEventTitleRequest request)
+    {
+        var userId = GetCurrentUserId();
+        if (userId == null) return Unauthorized();
+
+        var trimmedTitle = request.Title?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedTitle))
+        {
+            return BadRequest(new { message = "Название мероприятия не может быть пустым" });
+        }
+
+        var ev = await _context.Events
+            .Include(e => e.Family)
+                .ThenInclude(f => f.Members)
+            .Include(e => e.CartItems)
+            .FirstOrDefaultAsync(e => e.Id == id);
+        if (ev == null) return NotFound(new { message = "Мероприятие не найдено" });
+
+        if (!await IsUserInFamilyAsync(userId.Value, ev.FamilyId))
+        {
+            return Forbid();
+        }
+
+        ev.Title = trimmedTitle;
+        await _context.SaveChangesAsync();
+
+        var fStr = ev.FamilyId.ToString().ToLowerInvariant();
+        await _hubContext.Clients.Group(fStr).SendAsync("EventUpdated", new
+        {
+            eventId = ev.Id.ToString().ToLowerInvariant(),
+            familyId = fStr,
+            title = ev.Title
+        });
+
+        return Ok(MapEventDto(ev));
+    }
+
+    /// <summary>
     /// Создание корзины для мероприятия
     /// </summary>
     [HttpPost("{id:guid}/cart")]

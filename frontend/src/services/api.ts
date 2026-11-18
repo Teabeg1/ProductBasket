@@ -228,27 +228,6 @@ export const AuthService = {
       return false;
     }
   },
-
-  // Отправка тестового пуш-уведомления
-  async testPushNotification(): Promise<{ success: boolean; message: string }> {
-    const token = await this.getToken();
-    if (!token) return { success: false, message: 'Пользователь не авторизован' };
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/test-push`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        return { success: false, message: data.message || 'Ошибка отправки тестового уведомления' };
-      }
-      return { success: true, message: data.message || 'Тестовое уведомление отправлено' };
-    } catch (e: any) {
-      return { success: false, message: e.message || 'Ошибка сети' };
-    }
-  },
 };
 
 export const FamilyService = {
@@ -415,6 +394,24 @@ export const EventsService = {
     });
     if (!res.ok) {
       const errorMsg = await extractErrorMessage(res, 'Не удалось создать мероприятие');
+      throw new Error(errorMsg);
+    }
+    return await res.json();
+  },
+
+  // Переименование мероприятия (PUT /api/events/{id}/title)
+  async updateEventTitle(eventId: string, title: string): Promise<EventDto> {
+    const token = await AuthService.getToken();
+    const res = await fetch(`${API_BASE_URL}/events/${eventId}/title`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ title }),
+    });
+    if (!res.ok) {
+      const errorMsg = await extractErrorMessage(res, 'Не удалось переименовать мероприятие');
       throw new Error(errorMsg);
     }
     return await res.json();

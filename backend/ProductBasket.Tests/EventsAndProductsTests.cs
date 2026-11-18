@@ -54,19 +54,29 @@ public class EventsAndProductsTests : IClassFixture<CustomWebApplicationFactory>
         Assert.False(ev.HasCart);
         Assert.False(ev.IsCompleted);
 
-        // 2. Создание корзины мероприятия
+        // 2. Переименование мероприятия
+        var renameRes = await client.PutAsJsonAsync($"/api/events/{ev.Id}/title", new UpdateEventTitleRequest
+        {
+            Title = "Юбилей Дениса"
+        });
+        Assert.Equal(HttpStatusCode.OK, renameRes.StatusCode);
+        var renamedEv = await renameRes.Content.ReadFromJsonAsync<EventDto>();
+        Assert.NotNull(renamedEv);
+        Assert.Equal("Юбилей Дениса", renamedEv.Title);
+
+        // 3. Создание корзины мероприятия
         var cartRes = await client.PostAsync($"/api/events/{ev.Id}/cart", null);
         Assert.Equal(HttpStatusCode.OK, cartRes.StatusCode);
 
-        // 3. Завершение мероприятия
+        // 4. Завершение мероприятия
         var completeRes = await client.PostAsync($"/api/events/{ev.Id}/complete", null);
         Assert.Equal(HttpStatusCode.OK, completeRes.StatusCode);
 
-        // 4. Возобновление мероприятия
+        // 5. Возобновление мероприятия
         var reopenRes = await client.PostAsync($"/api/events/{ev.Id}/reopen", null);
         Assert.Equal(HttpStatusCode.OK, reopenRes.StatusCode);
 
-        // 5. Удаление мероприятия
+        // 6. Удаление мероприятия
         var deleteRes = await client.DeleteAsync($"/api/events/{ev.Id}");
         Assert.Equal(HttpStatusCode.OK, deleteRes.StatusCode);
 
@@ -188,5 +198,59 @@ public class EventsAndProductsTests : IClassFixture<CustomWebApplicationFactory>
         var ev = await evHomeRes.Content.ReadFromJsonAsync<EventDto>();
         var illegalDel = await otherClient.DeleteAsync($"/api/events/{ev!.Id}");
         Assert.Equal(HttpStatusCode.Forbidden, illegalDel.StatusCode);
+    }
+
+    [Fact]
+    public async Task Events_UpdateTitle_ValidatesAndEnforcesFamilyMembership()
+    {
+        var (ownerClient, _, familyId) = await SetupUserWithFamilyAsync("RenameOwner");
+        var (strangerClient, _, _) = await SetupUserWithFamilyAsync("RenameStranger");
+
+        var createRes = await ownerClient.PostAsJsonAsync("/api/events", new CreateEventRequest
+        {
+            FamilyId = familyId,
+            Title = "Старое название",
+            EventDate = "20 декабря",
+            Icon = "🎄"
+        });
+        Assert.Equal(HttpStatusCode.Created, createRes.StatusCode);
+        var created = await createRes.Content.ReadFromJsonAsync<EventDto>();
+        Assert.NotNull(created);
+
+        // 1. Пустое / пробельное название отклоняется (400 BadRequest)
+        var emptyRes = await ownerClient.PutAsJsonAsync($"/api/events/{created.Id}/title", new UpdateEventTitleRequest
+        {
+            Title = "   "
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, emptyRes.StatusCode);
+
+        // 2. Сторонний пользователь не может переименовать чужое мероприятие (403 Forbidden)
+        var forbiddenRes = await strangerClient.PutAsJsonAsync($"/api/events/{created.Id}/title", new UpdateEventTitleRequest
+        {
+            Title = "Взлом"
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, forbiddenRes.StatusCode);
+
+        // 3. Несуществующее мероприятие возвращает 404 NotFound
+        var notFoundRes = await ownerClient.PutAsJsonAsync($"/api/events/{Guid.NewGuid()}/title", new UpdateEventTitleRequest
+        {
+            Title = "Новое"
+        });
+        Assert.Equal(HttpStatusCode.NotFound, notFoundRes.StatusCode);
+
+        // 4. Участник группы успешно переименовывает мероприятие, и изменение сохраняется в БД
+        var okRes = await ownerClient.PutAsJsonAsync($"/api/events/{created.Id}/title", new UpdateEventTitleRequest
+        {
+            Title = "  Новогодний ужин  "
+        });
+        Assert.Equal(HttpStatusCode.OK, okRes.StatusCode);
+        var updated = await okRes.Content.ReadFromJsonAsync<EventDto>();
+        Assert.NotNull(updated);
+        Assert.Equal("Новогодний ужин", updated.Title);
+
+        var listRes = await ownerClient.GetAsync($"/api/events?familyId={familyId}");
+        var list = await listRes.Content.ReadFromJsonAsync<List<EventDto>>();
+        Assert.NotNull(list);
+        Assert.Contains(list, e => e.Id == created.Id && e.Title == "Новогодний ужин");
     }
 }

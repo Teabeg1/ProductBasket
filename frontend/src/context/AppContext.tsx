@@ -216,6 +216,7 @@ interface AppContextType {
   events: AppEvent[];
   refreshEvents: (familyId?: string) => Promise<void>;
   createEvent: (data: { title: string; date: string; emoji: string; familyId?: string; hasCart?: boolean }) => void;
+  updateEventTitle: (eventId: string, title: string) => Promise<void>;
   deleteEvent: (id: string) => void;
   createEventCart: (id: string) => void;
   getEventCartStats: (eventId: string) => { total: number; assigned: number; bought: number };
@@ -765,9 +766,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         );
       });
 
-      // 11. Подписка на создание, удаление и завершение мероприятий (Bug 4)
+      // 11. Подписка на создание, переименование, удаление и завершение мероприятий (Bug 4)
       const unsubEventCreated = SignalRService.onEventCreated(async () => {
         await refreshEvents();
+      });
+
+      const unsubEventUpdated = SignalRService.onEventUpdated((data) => {
+        if (!data?.eventId || !data?.title) return;
+        setEvents((prev) =>
+          prev.map((e) =>
+            e.id.toLowerCase() === data.eventId.toLowerCase()
+              ? { ...e, title: data.title }
+              : e
+          )
+        );
       });
 
       const unsubEventDeleted = SignalRService.onEventDeleted((data) => {
@@ -978,6 +990,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       unsubMemberJoined();
       unsubMemberRemoved();
       unsubEventCreated();
+      unsubEventUpdated();
       unsubEventDeleted();
       unsubEventCompleted();
       unsubMemberUpdated();
@@ -2448,6 +2461,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const updateEventTitle = async (eventId: string, title: string): Promise<void> => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+
+    const normId = eventId.toLowerCase();
+    const prevEvent = events.find((e) => e.id.toLowerCase() === normId);
+    if (!prevEvent || prevEvent.title === trimmed) return;
+
+    const previousTitle = prevEvent.title;
+    setEvents((prev) =>
+      prev.map((e) => (e.id.toLowerCase() === normId ? { ...e, title: trimmed } : e))
+    );
+
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(eventId)) {
+      try {
+        const updated = await EventsService.updateEventTitle(eventId, trimmed);
+        if (updated?.title) {
+          setEvents((prev) =>
+            prev.map((e) => (e.id.toLowerCase() === normId ? { ...e, title: updated.title } : e))
+          );
+        }
+      } catch (e: any) {
+        console.warn('Backend updateEventTitle failed:', e);
+        setEvents((prev) =>
+          prev.map((ev) => (ev.id.toLowerCase() === normId ? { ...ev, title: previousTitle } : ev))
+        );
+        Alert.alert('Ошибка', e?.message || 'Не удалось сохранить название мероприятия');
+        throw e;
+      }
+    }
+  };
+
   const deleteEvent = (id: string) => {
     setEvents((prev) => prev.filter((e) => e.id !== id));
     setCarts((prev) => {
@@ -2579,6 +2624,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         events,
         refreshEvents,
         createEvent,
+        updateEventTitle,
         deleteEvent,
         createEventCart,
         getEventCartStats,

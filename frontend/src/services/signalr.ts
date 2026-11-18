@@ -46,6 +46,12 @@ export interface EventCreatedPayload {
   title: string;
 }
 
+export interface EventUpdatedPayload {
+  eventId: string;
+  familyId: string;
+  title: string;
+}
+
 export interface EventDeletedPayload {
   eventId: string;
   familyId: string;
@@ -81,6 +87,7 @@ type MemberJoinedCallback = (data: MemberJoinedPayload) => void;
 type MemberRemovedCallback = (data: MemberRemovedPayload) => void;
 type MemberUpdatedCallback = (data: MemberUpdatedPayload) => void;
 type EventCreatedCallback = (data: EventCreatedPayload) => void;
+type EventUpdatedCallback = (data: EventUpdatedPayload) => void;
 type EventDeletedCallback = (data: EventDeletedPayload) => void;
 type EventCompletedCallback = (data: EventCompletedPayload) => void;
 type EventCartCreatedCallback = (data: EventCartCreatedPayload) => void;
@@ -96,6 +103,7 @@ class SignalRManager {
   private memberRemovedListeners: Set<MemberRemovedCallback> = new Set();
   private memberUpdatedListeners: Set<MemberUpdatedCallback> = new Set();
   private eventCreatedListeners: Set<EventCreatedCallback> = new Set();
+  private eventUpdatedListeners: Set<EventUpdatedCallback> = new Set();
   private eventDeletedListeners: Set<EventDeletedCallback> = new Set();
   private eventCompletedListeners: Set<EventCompletedCallback> = new Set();
   private eventCartCreatedListeners: Set<EventCartCreatedCallback> = new Set();
@@ -196,6 +204,12 @@ class SignalRManager {
       this.connection.on('EventCreated', (data: EventCreatedPayload) => {
         this.eventCreatedListeners.forEach((cb) => {
           try { cb(data); } catch (e) { console.warn('Error in eventCreatedListener', e); }
+        });
+      });
+
+      this.connection.on('EventUpdated', (data: EventUpdatedPayload) => {
+        this.eventUpdatedListeners.forEach((cb) => {
+          try { cb(data); } catch (e) { console.warn('Error in eventUpdatedListener', e); }
         });
       });
 
@@ -410,6 +424,13 @@ class SignalRManager {
     this.eventCreatedListeners.add(cb);
     return () => {
       this.eventCreatedListeners.delete(cb);
+    };
+  }
+
+  onEventUpdated(cb: EventUpdatedCallback): () => void {
+    this.eventUpdatedListeners.add(cb);
+    return () => {
+      this.eventUpdatedListeners.delete(cb);
     };
   }
 

@@ -35,6 +35,13 @@ public class CreateEventRequest
     public bool? HasCart { get; set; }
 }
 
+public class UpdateEventTitleRequest
+{
+    [Required]
+    [MaxLength(150)]
+    public string Title { get; set; } = string.Empty;
+}
+
 public class EventCartStatsDto
 {
     public int Total { get; set; }

@@ -5,11 +5,15 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Modal,
+  TouchableWithoutFeedback,
+  TextInput,
 } from 'react-native';
 import { AppText as Text } from '../components/AppText';
 import {
   Plus,
   Trash2,
+  Pencil,
   ShoppingBag,
   Calendar,
   ArrowRight,
@@ -37,6 +41,7 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
     colors,
     t,
     events,
+    updateEventTitle,
     deleteEvent,
     createEventCart,
     openEventCart,
@@ -50,6 +55,42 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
 
   const [activeTab, setActiveTab] = useState<EventFilterTab>('active');
   const [selectedSpaceFilter, setSelectedSpaceFilter] = useState<string>('all');
+  const [editingEvent, setEditingEvent] = useState<AppEvent | null>(null);
+  const [editTitleInput, setEditTitleInput] = useState('');
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
+
+  const handleOpenEditEvent = (item: AppEvent) => {
+    setEditingEvent(item);
+    setEditTitleInput(item.title);
+  };
+
+  const handleCloseEditEvent = () => {
+    if (isSavingTitle) return;
+    setEditingEvent(null);
+    setEditTitleInput('');
+  };
+
+  const handleSaveEventTitle = async () => {
+    if (!editingEvent || isSavingTitle) return;
+    const trimmed = editTitleInput.trim();
+    if (!trimmed) {
+      Alert.alert('Ошибка', 'Название мероприятия не может быть пустым');
+      return;
+    }
+    if (trimmed === editingEvent.title) {
+      setEditingEvent(null);
+      return;
+    }
+    setIsSavingTitle(true);
+    try {
+      await updateEventTitle(editingEvent.id, trimmed);
+      setEditingEvent(null);
+    } catch {
+      // Ошибка уже отображена в AppContext
+    } finally {
+      setIsSavingTitle(false);
+    }
+  };
 
   React.useEffect(() => {
     refreshEvents();
@@ -368,11 +409,21 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
                             <Text style={styles.emojiText}>{item.emoji}</Text>
                           </View>
                           <View style={styles.titleBox}>
-                            <Text
-                              style={[styles.eventTitle, { color: colors.textDark }]}
+                            <TouchableOpacity
+                              style={styles.eventTitleRow}
+                              activeOpacity={0.7}
+                              onPress={() => handleOpenEditEvent(item)}
                             >
-                              {item.title}
-                            </Text>
+                              <Text
+                                style={[styles.eventTitle, { color: colors.textDark }]}
+                                numberOfLines={2}
+                              >
+                                {item.title}
+                              </Text>
+                              <View style={[styles.editTitleIconBtn, { backgroundColor: colors.cardSecondary }]}>
+                                <Pencil size={12} color={colors.textSecondary} />
+                              </View>
+                            </TouchableOpacity>
                             <View style={styles.eventDateGroupRow}>
                               <Text
                                 style={[
@@ -572,11 +623,21 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
                           </View>
                           <View style={styles.titleBox}>
                             <View style={styles.completedTitleRow}>
-                              <Text
-                                style={[styles.eventTitle, { color: colors.textDark }]}
+                              <TouchableOpacity
+                                style={styles.eventTitleRow}
+                                activeOpacity={0.7}
+                                onPress={() => handleOpenEditEvent(item)}
                               >
-                                {item.title}
-                              </Text>
+                                <Text
+                                  style={[styles.eventTitle, { color: colors.textDark }]}
+                                  numberOfLines={2}
+                                >
+                                  {item.title}
+                                </Text>
+                                <View style={[styles.editTitleIconBtn, { backgroundColor: colors.cardSecondary }]}>
+                                  <Pencil size={12} color={colors.textSecondary} />
+                                </View>
+                              </TouchableOpacity>
                               <View style={[styles.completedBadge, { backgroundColor: colors.successLight }]}>
                                 <CheckCircle2 size={11} color={colors.success} style={{ marginRight: 3 }} />
                                 <Text style={[styles.completedBadgeText, { color: colors.success }]}>
@@ -675,6 +736,80 @@ export const EventsScreen: React.FC<EventsScreenProps> = ({
           </>
         )}
       </ScrollView>
+
+      {/* Модальное окно: Редактирование названия мероприятия */}
+      <Modal
+        visible={Boolean(editingEvent)}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCloseEditEvent}
+      >
+        <TouchableWithoutFeedback onPress={handleCloseEditEvent}>
+          <View style={styles.promptOverlay}>
+            <TouchableWithoutFeedback>
+              <View
+                style={[
+                  styles.promptCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.promptTitle, { color: colors.textDark }]}>
+                  Редактировать название
+                </Text>
+                <Text style={[styles.promptSubtitle, { color: colors.textSecondary }]}>
+                  Новое название мероприятия увидят все участники группы
+                </Text>
+
+                <TextInput
+                  style={[
+                    styles.promptInput,
+                    {
+                      backgroundColor: colors.cardSecondary,
+                      borderColor: colors.border,
+                      color: colors.textDark,
+                    },
+                  ]}
+                  value={editTitleInput}
+                  onChangeText={setEditTitleInput}
+                  placeholder="Название мероприятия"
+                  placeholderTextColor={colors.textMuted}
+                  maxLength={150}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={handleSaveEventTitle}
+                />
+
+                <View style={styles.promptActions}>
+                  <TouchableOpacity
+                    style={[styles.promptCancelBtn, { backgroundColor: colors.cardSecondary }]}
+                    activeOpacity={0.7}
+                    disabled={isSavingTitle}
+                    onPress={handleCloseEditEvent}
+                  >
+                    <Text style={[styles.promptCancelText, { color: colors.textSecondary }]}>
+                      Отмена
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.promptSaveBtn,
+                      { backgroundColor: colors.primary, opacity: isSavingTitle ? 0.6 : 1 },
+                    ]}
+                    activeOpacity={0.8}
+                    disabled={isSavingTitle}
+                    onPress={handleSaveEventTitle}
+                  >
+                    <Text style={styles.promptSaveText}>
+                      {isSavingTitle ? 'Сохранение...' : 'Сохранить'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </View>
   );
 };
@@ -845,6 +980,22 @@ const styles = StyleSheet.create({
   },
   titleBox: {
     flex: 1,
+    paddingRight: 6,
+  },
+  eventTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  editTitleIconBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
   },
   completedTitleRow: {
     flexDirection: 'row',
@@ -866,6 +1017,7 @@ const styles = StyleSheet.create({
   eventTitle: {
     fontSize: 14,
     fontWeight: '700',
+    flexShrink: 1,
   },
   eventDateInfo: {
     fontSize: 12,
@@ -1023,5 +1175,67 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     textAlign: 'center',
+  },
+  promptOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 18, 24, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  promptCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  promptTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  promptSubtitle: {
+    fontSize: 13,
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  promptInput: {
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 18,
+  },
+  promptActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  promptCancelBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  promptCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  promptSaveBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+  },
+  promptSaveText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
